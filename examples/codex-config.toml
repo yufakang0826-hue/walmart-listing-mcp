@@ -1,0 +1,4 @@
+[mcp_servers.walmart_listing]
+command = "C:/nvm4w/nodejs/node.exe"
+args = ["C:/Users/Fakang/Desktop/乐好智能ERP/walmart listing MCP/dist/index.js"]
+env = { WALMART_CLIENT_ID = "your_client_id", WALMART_CLIENT_SECRET = "your_client_secret", WALMART_MARKETPLACE = "US", WALMART_SANDBOX = "false", WALMART_SELLER_PROFILE_STORE = "C:/Users/Fakang/Desktop/乐好智能ERP/walmart listing MCP/.walmart-seller-profiles.json" }

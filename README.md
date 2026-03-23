@@ -51,6 +51,17 @@ npm run build
 npm start
 ```
 
+## MCP Integration
+
+Complete Codex / Claude integration instructions:
+
+- [docs/MCP_SETUP_CN.md](./docs/MCP_SETUP_CN.md)
+
+Ready-to-edit examples:
+
+- [examples/codex-config.toml](./examples/codex-config.toml)
+- [examples/claude-settings.json](./examples/claude-settings.json)
+
 ## Main Tools
 
 - `walmart_upsert_seller_profile`
@@ -76,6 +87,7 @@ npm start
 ## Notes
 
 - Seller profiles are stored locally in `.walmart-seller-profiles.json`.
+- For Codex / Claude integrations, prefer putting credentials in the MCP `env` block and set `WALMART_SELLER_PROFILE_STORE` to an absolute path.
 - `walmart_invoke_listing_api` is restricted to:
   - `/v3/items`
   - `/v3/inventory`
