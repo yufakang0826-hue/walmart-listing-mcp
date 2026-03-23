@@ -77,16 +77,9 @@ class WalmartAuthService {
   }
 
   getStartupErrors(): string[] {
-    if (sellerProfileStore.hasProfiles()) {
-      return [];
-    }
-    if (this.envClientId && this.envClientSecret) {
-      return [];
-    }
-
-    return [
-      "Authentication is not configured. Provide WALMART_CLIENT_ID and WALMART_CLIENT_SECRET, or create a seller profile with stored credentials.",
-    ];
+    // Allow the MCP server to start without credentials so auth/profile tools remain usable.
+    // Listing calls will still fail at tool execution time until credentials are configured.
+    return [];
   }
 
   listSellerProfiles(): SellerProfileSummary[] {
