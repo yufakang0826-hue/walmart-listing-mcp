@@ -95,3 +95,4 @@ Ready-to-edit examples:
   - `/v3/feeds`
   - `/v3/utilities/taxonomy`
 - Access tokens are cached in memory per profile or credential set.
+- `walmart_get_item_status` derives publication and lifecycle fields from the item lookup response for the requested SKU.

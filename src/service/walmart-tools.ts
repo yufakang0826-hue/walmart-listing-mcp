@@ -178,7 +178,7 @@ function registerListingTools(server: McpServer): void {
   registerTool(
     server,
     "walmart_get_item_status",
-    "Get Walmart item publication status and unpublished reasons by SKU.",
+    "Get Walmart item status fields by SKU using the item lookup response.",
     {
       sku: z.string().describe("Seller SKU."),
       sellerProfileId: z.string().optional().describe("Optional seller profile ID."),

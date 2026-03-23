@@ -49,6 +49,25 @@ interface RequestOptions {
   contentType?: string;
 }
 
+interface WalmartItemRecord {
+  sku?: string;
+  mart?: string;
+  wpid?: string;
+  availability?: string;
+  publishedStatus?: string;
+  lifecycleStatus?: string;
+  isDuplicate?: boolean;
+  unpublishedReasons?: unknown;
+  unpublishedReason?: unknown;
+  [key: string]: unknown;
+}
+
+interface WalmartItemLookupResponse {
+  ItemResponse?: WalmartItemRecord[];
+  totalItems?: number;
+  [key: string]: unknown;
+}
+
 const tokenCache = new Map<string, WalmartTokenInfo>();
 
 function buildErrorMessage(body: unknown, fallback: string): { code: string; message: string } {
@@ -285,7 +304,25 @@ export class WalmartClient {
   }
 
   async getItemStatus(sku: string): Promise<unknown> {
-    return this.request({ method: "GET", path: `/v3/items/${encodeURIComponent(sku)}/status` });
+    const payload = await this.getItem(sku) as WalmartItemLookupResponse;
+    const item = Array.isArray(payload?.ItemResponse)
+      ? payload.ItemResponse.find((entry) => entry?.sku === sku) || payload.ItemResponse[0]
+      : undefined;
+
+    if (!item) {
+      throw new WalmartClientError(404, "WALMART_ITEM_NOT_FOUND", `No Walmart item was returned for SKU ${sku}`, payload);
+    }
+
+    return {
+      sku,
+      mart: item.mart ?? null,
+      wpid: item.wpid ?? null,
+      availability: item.availability ?? null,
+      publishedStatus: item.publishedStatus ?? null,
+      lifecycleStatus: item.lifecycleStatus ?? null,
+      isDuplicate: typeof item.isDuplicate === "boolean" ? item.isDuplicate : null,
+      unpublishedReasons: item.unpublishedReasons ?? item.unpublishedReason ?? null,
+    };
   }
 
   async submitFeed(feedType: string, payload: unknown, params?: QueryParams): Promise<unknown> {
