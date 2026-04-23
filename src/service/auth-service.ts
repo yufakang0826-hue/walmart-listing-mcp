@@ -9,6 +9,8 @@ interface UpsertSellerProfileOptions {
   clientId?: string;
   clientSecret?: string;
   channelType?: string;
+  consumerId?: string;
+  svcEnv?: string;
   setActive?: boolean;
 }
 
@@ -19,6 +21,8 @@ interface SellerProfileSummary {
   hasClientId: boolean;
   hasClientSecret: boolean;
   hasChannelType: boolean;
+  hasConsumerId: boolean;
+  svcEnv: string;
   isActive: boolean;
   updatedAt: string;
 }
@@ -42,6 +46,8 @@ interface ResolvedCredentials {
   clientSecret: string;
   marketplace: string;
   channelType: string | null;
+  consumerId: string | null;
+  svcEnv: string;
 }
 
 class WalmartAuthService {
@@ -59,6 +65,14 @@ class WalmartAuthService {
 
   private get envChannelType(): string {
     return process.env.WALMART_CHANNEL_TYPE || "";
+  }
+
+  private get envConsumerId(): string {
+    return process.env.WALMART_CONSUMER_ID || "";
+  }
+
+  private get envSvcEnv(): string {
+    return process.env.WALMART_SVC_ENV || (isSandboxEnvironment() ? "stg" : "prod");
   }
 
   private getSelectedProfileId(profileId?: string): string | undefined {
@@ -79,6 +93,8 @@ class WalmartAuthService {
       hasClientId: Boolean(profile.clientId),
       hasClientSecret: Boolean(profile.clientSecret),
       hasChannelType: Boolean(profile.channelType || this.envChannelType),
+      hasConsumerId: Boolean(profile.consumerId || this.envConsumerId),
+      svcEnv: profile.svcEnv || this.envSvcEnv,
       isActive: profile.sellerProfileId === activeId,
       updatedAt: profile.updatedAt,
     };
@@ -106,6 +122,8 @@ class WalmartAuthService {
       clientId: options.clientId || current?.clientId,
       clientSecret: options.clientSecret || current?.clientSecret,
       channelType: options.channelType || current?.channelType,
+      consumerId: options.consumerId || current?.consumerId,
+      svcEnv: options.svcEnv || current?.svcEnv,
     });
 
     if (options.setActive ?? true) {
@@ -123,6 +141,8 @@ class WalmartAuthService {
     const clientSecret = profile?.clientSecret || this.envClientSecret;
     const marketplace = profile?.marketplace || this.envMarketplace;
     const channelType = profile?.channelType || this.envChannelType || null;
+    const consumerId = profile?.consumerId || this.envConsumerId || null;
+    const svcEnv = profile?.svcEnv || this.envSvcEnv;
 
     if (!clientId || !clientSecret) {
       if (selectedProfileId) {
@@ -138,6 +158,8 @@ class WalmartAuthService {
       clientSecret,
       marketplace,
       channelType,
+      consumerId,
+      svcEnv,
     };
   }
 
@@ -149,6 +171,8 @@ class WalmartAuthService {
       clientSecret: credentials.clientSecret,
       marketplace: credentials.marketplace,
       channelType: credentials.channelType,
+      consumerId: credentials.consumerId,
+      svcEnv: credentials.svcEnv,
     });
   }
 

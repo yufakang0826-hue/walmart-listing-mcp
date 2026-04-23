@@ -9,6 +9,8 @@ export interface SellerProfileRecord {
   clientId?: string;
   clientSecret?: string;
   channelType?: string;
+  consumerId?: string;
+  svcEnv?: string;
   updatedAt: string;
 }
 
