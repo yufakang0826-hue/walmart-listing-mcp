@@ -8,6 +8,7 @@ interface UpsertSellerProfileOptions {
   marketplace?: string;
   clientId?: string;
   clientSecret?: string;
+  channelType?: string;
   setActive?: boolean;
 }
 
@@ -17,6 +18,7 @@ interface SellerProfileSummary {
   marketplace: string;
   hasClientId: boolean;
   hasClientSecret: boolean;
+  hasChannelType: boolean;
   isActive: boolean;
   updatedAt: string;
 }
@@ -39,6 +41,7 @@ interface ResolvedCredentials {
   clientId: string;
   clientSecret: string;
   marketplace: string;
+  channelType: string | null;
 }
 
 class WalmartAuthService {
@@ -52,6 +55,10 @@ class WalmartAuthService {
 
   private get envMarketplace(): string {
     return process.env.WALMART_MARKETPLACE || DEFAULT_MARKETPLACE;
+  }
+
+  private get envChannelType(): string {
+    return process.env.WALMART_CHANNEL_TYPE || "";
   }
 
   private getSelectedProfileId(profileId?: string): string | undefined {
@@ -71,6 +78,7 @@ class WalmartAuthService {
       marketplace: profile.marketplace,
       hasClientId: Boolean(profile.clientId),
       hasClientSecret: Boolean(profile.clientSecret),
+      hasChannelType: Boolean(profile.channelType || this.envChannelType),
       isActive: profile.sellerProfileId === activeId,
       updatedAt: profile.updatedAt,
     };
@@ -97,6 +105,7 @@ class WalmartAuthService {
       marketplace: options.marketplace || current?.marketplace || this.envMarketplace,
       clientId: options.clientId || current?.clientId,
       clientSecret: options.clientSecret || current?.clientSecret,
+      channelType: options.channelType || current?.channelType,
     });
 
     if (options.setActive ?? true) {
@@ -113,6 +122,7 @@ class WalmartAuthService {
     const clientId = profile?.clientId || this.envClientId;
     const clientSecret = profile?.clientSecret || this.envClientSecret;
     const marketplace = profile?.marketplace || this.envMarketplace;
+    const channelType = profile?.channelType || this.envChannelType || null;
 
     if (!clientId || !clientSecret) {
       if (selectedProfileId) {
@@ -127,6 +137,7 @@ class WalmartAuthService {
       clientId,
       clientSecret,
       marketplace,
+      channelType,
     };
   }
 
@@ -137,6 +148,7 @@ class WalmartAuthService {
       clientId: credentials.clientId,
       clientSecret: credentials.clientSecret,
       marketplace: credentials.marketplace,
+      channelType: credentials.channelType,
     });
   }
 

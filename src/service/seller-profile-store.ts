@@ -8,6 +8,7 @@ export interface SellerProfileRecord {
   marketplace: string;
   clientId?: string;
   clientSecret?: string;
+  channelType?: string;
   updatedAt: string;
 }
 

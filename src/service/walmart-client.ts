@@ -38,6 +38,7 @@ interface WalmartClientConfig {
   clientId: string;
   clientSecret: string;
   marketplace: string;
+  channelType?: string | null;
 }
 
 interface RequestOptions {
@@ -154,12 +155,18 @@ export class WalmartClient {
   private readonly clientId: string;
   private readonly clientSecret: string;
   private readonly marketplace: string;
+  private readonly channelType: string | null;
 
   constructor(config: WalmartClientConfig) {
     this.sellerProfileId = config.sellerProfileId || null;
     this.clientId = config.clientId;
     this.clientSecret = config.clientSecret;
     this.marketplace = config.marketplace;
+    this.channelType = config.channelType || null;
+  }
+
+  private get partnerHeaders(): Record<string, string> {
+    return this.channelType ? { "WM_CONSUMER.CHANNEL.TYPE": this.channelType } : {};
   }
 
   private get cacheKey(): string {
@@ -258,6 +265,7 @@ export class WalmartClient {
             "WM_SEC.ACCESS_TOKEN": token,
             "WM_SVC.NAME": DEFAULT_SERVICE_NAME,
             "WM_QOS.CORRELATION_ID": randomUUID(),
+            ...this.partnerHeaders,
             Accept: options.accept || "application/json",
             ...bodyHeaders,
           },

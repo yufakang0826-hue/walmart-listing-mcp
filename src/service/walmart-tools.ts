@@ -56,13 +56,14 @@ function registerAuthTools(server: McpServer): void {
   registerTool(
     server,
     "walmart_upsert_seller_profile",
-    "Create or update a Walmart seller profile for listing operations. Stores clientId, clientSecret, and marketplace locally.",
+    "Create or update a Walmart seller profile for listing operations. Stores clientId, clientSecret, marketplace, and channelType locally.",
     {
       sellerProfileId: z.string().describe("Seller profile ID, for example walmart-us-main."),
       sellerProfileLabel: z.string().optional().describe("Optional human-readable label for the seller profile."),
       marketplace: z.string().optional().describe("Marketplace code such as US, CA, or MX."),
       clientId: z.string().optional().describe("Optional Walmart client ID."),
       clientSecret: z.string().optional().describe("Optional Walmart client secret."),
+      channelType: z.string().optional().describe("Optional WM_CONSUMER.CHANNEL.TYPE (Consumer Channel Type UUID) from Walmart Developer Portal. Required for feeds to be tagged as SELLER_API."),
       setActive: z.boolean().default(true).describe("Whether to make this profile active immediately."),
     },
     async (input) => authService.upsertSellerProfile({
@@ -71,6 +72,7 @@ function registerAuthTools(server: McpServer): void {
       marketplace: typeof input.marketplace === "string" ? input.marketplace : undefined,
       clientId: typeof input.clientId === "string" ? input.clientId : undefined,
       clientSecret: typeof input.clientSecret === "string" ? input.clientSecret : undefined,
+      channelType: typeof input.channelType === "string" ? input.channelType : undefined,
       setActive: typeof input.setActive === "boolean" ? input.setActive : true,
     }),
   );
