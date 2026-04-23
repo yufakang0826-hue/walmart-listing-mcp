@@ -203,17 +203,19 @@ function registerListingTools(server: McpServer): void {
   registerTool(
     server,
     "walmart_submit_feed",
-    "Submit a Walmart feed for listing operations. Common feedType values include MP_ITEM and price.",
+    "Submit a Walmart feed for listing operations. Payload is uploaded as multipart/form-data (Walmart API requirement). Common feedType values include MP_ITEM and price.",
     {
       feedType: z.string().describe("Feed type, for example MP_ITEM or price."),
-      payload: z.any().describe("Exact Walmart feed payload body."),
+      payload: z.any().describe("Exact Walmart feed payload body (object for JSON, string for XML)."),
       params: paramsSchema.describe("Optional extra query parameters such as feedVersion or locale."),
+      contentType: z.string().optional().describe("Optional feed content type. Defaults to application/json, set to application/xml for XML feeds."),
       sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
     },
     async (input) => withClient(input, async (client) => client.submitFeed(
       String(input.feedType),
       input.payload,
       input.params as Record<string, string | number | boolean | undefined> | undefined,
+      typeof input.contentType === "string" ? { contentType: input.contentType } : undefined,
     )),
   );
 

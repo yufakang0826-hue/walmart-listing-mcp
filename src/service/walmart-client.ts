@@ -47,6 +47,10 @@ interface RequestOptions {
   body?: unknown;
   accept?: string;
   contentType?: string;
+  fileUpload?: {
+    filename: string;
+    mimeType: string;
+  };
 }
 
 interface WalmartItemRecord {
@@ -113,6 +117,36 @@ function getReplenishTime(headers: Headers): number | null {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function serializeBody(body: unknown, contentType: string): string {
+  if (typeof body === "string") {
+    return body;
+  }
+  if (contentType.includes("json")) {
+    return JSON.stringify(body);
+  }
+  return String(body);
+}
+
+function buildRequestBody(options: RequestOptions): { body: BodyInit | undefined; headers: Record<string, string> } {
+  if (options.body === undefined) {
+    return { body: undefined, headers: {} };
+  }
+
+  if (options.fileUpload) {
+    const { filename, mimeType } = options.fileUpload;
+    const serialized = serializeBody(options.body, mimeType);
+    const form = new FormData();
+    form.append("file", new Blob([serialized], { type: mimeType }), filename);
+    return { body: form, headers: {} };
+  }
+
+  const contentType = options.contentType || "application/json";
+  return {
+    body: serializeBody(options.body, contentType),
+    headers: { "Content-Type": contentType },
+  };
 }
 
 export class WalmartClient {
@@ -217,6 +251,7 @@ export class WalmartClient {
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
       try {
         const token = await this.getAccessToken(didRefreshToken);
+        const { body: fetchBody, headers: bodyHeaders } = buildRequestBody(options);
         const response = await fetch(this.buildUrl(options.path, options.params), {
           method: options.method,
           headers: {
@@ -224,13 +259,9 @@ export class WalmartClient {
             "WM_SVC.NAME": DEFAULT_SERVICE_NAME,
             "WM_QOS.CORRELATION_ID": randomUUID(),
             Accept: options.accept || "application/json",
-            ...(options.body !== undefined ? { "Content-Type": options.contentType || "application/json" } : {}),
+            ...bodyHeaders,
           },
-          body: options.body !== undefined
-            ? (options.contentType || "application/json") === "application/json"
-              ? JSON.stringify(options.body)
-              : String(options.body)
-            : undefined,
+          body: fetchBody,
         });
 
         if (!response.ok) {
@@ -325,12 +356,24 @@ export class WalmartClient {
     };
   }
 
-  async submitFeed(feedType: string, payload: unknown, params?: QueryParams): Promise<unknown> {
+  async submitFeed(
+    feedType: string,
+    payload: unknown,
+    params?: QueryParams,
+    options?: { contentType?: string },
+  ): Promise<unknown> {
+    const mimeType = options?.contentType
+      || (typeof payload === "string" && payload.trim().startsWith("<")
+        ? "application/xml"
+        : "application/json");
+    const filename = mimeType.includes("xml") ? "feed.xml" : "feed.json";
+
     return this.request({
       method: "POST",
       path: "/v3/feeds",
       params: { feedType, ...(params || {}) },
       body: payload,
+      fileUpload: { filename, mimeType },
     });
   }
 
