@@ -24,30 +24,69 @@ function createEmptyStore(): SellerProfileStoreData {
 }
 
 class SellerProfileStore {
+  private cache: SellerProfileStoreData | null = null;
+  private cachedPath: string | null = null;
+
   private get storePath(): string {
     return process.env.WALMART_SELLER_PROFILE_STORE || path.join(process.cwd(), DEFAULT_PROFILE_STORE_FILENAME);
   }
 
   private readStore(): SellerProfileStoreData {
-    if (!fs.existsSync(this.storePath)) {
-      return createEmptyStore();
+    const currentPath = this.storePath;
+    if (this.cache && this.cachedPath === currentPath) {
+      return this.cache;
     }
 
-    const content = fs.readFileSync(this.storePath, "utf-8").trim();
-    if (!content) {
-      return createEmptyStore();
+    let data: SellerProfileStoreData;
+    if (!fs.existsSync(currentPath)) {
+      data = createEmptyStore();
+    } else {
+      const content = fs.readFileSync(currentPath, "utf-8").trim();
+      if (!content) {
+        data = createEmptyStore();
+      } else {
+        const parsed = JSON.parse(content) as Partial<SellerProfileStoreData>;
+        data = {
+          activeSellerProfileId: parsed.activeSellerProfileId,
+          profiles: parsed.profiles || {},
+        };
+      }
     }
 
-    const parsed = JSON.parse(content) as Partial<SellerProfileStoreData>;
-    return {
-      activeSellerProfileId: parsed.activeSellerProfileId,
-      profiles: parsed.profiles || {},
-    };
+    this.cache = data;
+    this.cachedPath = currentPath;
+    return data;
   }
 
   private writeStore(store: SellerProfileStoreData): void {
-    fs.mkdirSync(path.dirname(this.storePath), { recursive: true });
-    fs.writeFileSync(this.storePath, `${JSON.stringify(store, null, 2)}\n`, "utf-8");
+    const currentPath = this.storePath;
+    fs.mkdirSync(path.dirname(currentPath), { recursive: true });
+
+    const serialized = `${JSON.stringify(store, null, 2)}\n`;
+    const tempPath = `${currentPath}.${process.pid}.${Date.now()}.tmp`;
+
+    // mode 0o600 only effective on POSIX; on Windows the ACL is inherited.
+    fs.writeFileSync(tempPath, serialized, { encoding: "utf-8", mode: 0o600 });
+    try {
+      fs.renameSync(tempPath, currentPath);
+    } catch (error) {
+      try { fs.unlinkSync(tempPath); } catch { /* swallow cleanup errors */ }
+      throw error;
+    }
+
+    try {
+      fs.chmodSync(currentPath, 0o600);
+    } catch {
+      // chmod is a best-effort tightening on POSIX; Windows ignores it.
+    }
+
+    this.cache = store;
+    this.cachedPath = currentPath;
+  }
+
+  invalidateCache(): void {
+    this.cache = null;
+    this.cachedPath = null;
   }
 
   listProfiles(): SellerProfileRecord[] {
@@ -73,8 +112,11 @@ class SellerProfileStore {
       throw new Error(`Seller profile not found: ${profileId}`);
     }
 
-    store.activeSellerProfileId = profileId;
-    this.writeStore(store);
+    const next: SellerProfileStoreData = {
+      ...store,
+      activeSellerProfileId: profileId,
+    };
+    this.writeStore(next);
     return profile;
   }
 
@@ -89,11 +131,11 @@ class SellerProfileStore {
       updatedAt: new Date().toISOString(),
     };
 
-    store.profiles[profileId] = nextProfile;
-    if (!store.activeSellerProfileId) {
-      store.activeSellerProfileId = profileId;
-    }
-    this.writeStore(store);
+    const nextStore: SellerProfileStoreData = {
+      activeSellerProfileId: store.activeSellerProfileId || profileId,
+      profiles: { ...store.profiles, [profileId]: nextProfile },
+    };
+    this.writeStore(nextStore);
     return nextProfile;
   }
 }

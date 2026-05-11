@@ -100,12 +100,6 @@ class WalmartAuthService {
     };
   }
 
-  getStartupErrors(): string[] {
-    // Allow the MCP server to start without credentials so auth/profile tools remain usable.
-    // Listing calls will still fail at tool execution time until credentials are configured.
-    return [];
-  }
-
   listSellerProfiles(): SellerProfileSummary[] {
     return sellerProfileStore.listProfiles().map((profile) => this.toSummary(profile));
   }
