@@ -6,7 +6,7 @@ import { authService } from "./auth-service.js";
 const methodSchema = z.enum(["GET", "POST", "PUT", "DELETE", "PATCH"]);
 const paramsSchema = z.record(z.union([z.string(), z.number(), z.boolean()])).optional();
 
-const listingPathPrefixes = [
+export const listingPathPrefixes = [
   "/v3/items",
   "/v3/inventory",
   "/v3/price",
@@ -14,7 +14,7 @@ const listingPathPrefixes = [
   "/v3/utilities/taxonomy",
 ];
 
-function assertListingPathAllowed(path: string): void {
+export function assertListingPathAllowed(path: string): void {
   const rawPath = path.startsWith("/") ? path : `/${path}`;
   // Reject any encoded or literal traversal segment / backslash escape so URL
   // normalization cannot turn /v3/items/../orders into /v3/orders.

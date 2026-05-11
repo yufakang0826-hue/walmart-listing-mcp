@@ -78,6 +78,11 @@ interface WalmartItemLookupResponse {
 
 const tokenCache = new Map<string, WalmartTokenInfo>();
 
+// Exposed for test isolation only; do not call from production code.
+export function __resetTokenCacheForTests(): void {
+  tokenCache.clear();
+}
+
 function buildErrorMessage(body: unknown, fallback: string): { code: string; message: string } {
   if (body && typeof body === "object") {
     const errors = (body as { errors?: Array<{ code?: string; description?: string; message?: string }> }).errors;
