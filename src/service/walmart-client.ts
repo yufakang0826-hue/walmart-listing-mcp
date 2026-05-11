@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   BASE_DELAY_MS,
   DEFAULT_SERVICE_NAME,
+  MAX_BACKOFF_MS,
   MAX_RETRIES,
   TOKEN_PATH,
   TOKEN_SAFETY_WINDOW_MS,
@@ -103,7 +104,7 @@ function buildErrorMessage(body: unknown, fallback: string): { code: string; mes
 }
 
 function computeBackoffDelay(attempt: number): number {
-  const exponentialDelay = BASE_DELAY_MS * Math.pow(2, attempt);
+  const exponentialDelay = Math.min(BASE_DELAY_MS * Math.pow(2, attempt), MAX_BACKOFF_MS);
   const jitter = Math.random() * exponentialDelay * 0.5;
   return exponentialDelay + jitter;
 }
@@ -120,6 +121,16 @@ function getReplenishTime(headers: Headers): number | null {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function defaultFeedFilename(mimeType: string): string {
+  const lower = mimeType.toLowerCase();
+  if (lower.includes("xml")) return "feed.xml";
+  if (lower.includes("zip")) return "feed.zip";
+  if (lower.includes("csv")) return "feed.csv";
+  if (lower.includes("tab") || lower.includes("tsv")) return "feed.tsv";
+  if (lower.includes("octet-stream")) return "feed.bin";
+  return "feed.json";
 }
 
 function serializeBody(body: unknown, contentType: string): string {
@@ -183,7 +194,8 @@ export class WalmartClient {
   }
 
   private get cacheKey(): string {
-    return this.sellerProfileId || `${this.marketplace}:${this.clientId}`;
+    const scope = `${this.svcEnv}:${this.marketplace}`;
+    return this.sellerProfileId ? `${scope}:${this.sellerProfileId}` : `${scope}:${this.clientId}`;
   }
 
   private get marketplaceBaseUrl(): string {
@@ -266,11 +278,13 @@ export class WalmartClient {
 
   private async request<T = unknown>(options: RequestOptions): Promise<T> {
     let lastError: unknown;
-    let didRefreshToken = false;
+    let hasRefreshedToken = false;
+    let forceRefreshOnce = false;
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
       try {
-        const token = await this.getAccessToken(didRefreshToken);
+        const token = await this.getAccessToken(forceRefreshOnce);
+        forceRefreshOnce = false;
         const { body: fetchBody, headers: bodyHeaders } = buildRequestBody(options);
         const response = await fetch(this.buildUrl(options.path, options.params), {
           method: options.method,
@@ -294,8 +308,9 @@ export class WalmartClient {
             parsedBody = responseText;
           }
 
-          if (response.status === 401 && !didRefreshToken) {
-            didRefreshToken = true;
+          if (response.status === 401 && !hasRefreshedToken) {
+            hasRefreshedToken = true;
+            forceRefreshOnce = true;
             tokenCache.delete(this.cacheKey);
             continue;
           }
@@ -357,12 +372,18 @@ export class WalmartClient {
 
   async getItemStatus(sku: string): Promise<unknown> {
     const payload = await this.getItem(sku) as WalmartItemLookupResponse;
-    const item = Array.isArray(payload?.ItemResponse)
-      ? payload.ItemResponse.find((entry) => entry?.sku === sku) || payload.ItemResponse[0]
-      : undefined;
+    const items = Array.isArray(payload?.ItemResponse) ? payload.ItemResponse : [];
+    const item = items.find((entry) => entry?.sku === sku);
 
     if (!item) {
-      throw new WalmartClientError(404, "WALMART_ITEM_NOT_FOUND", `No Walmart item was returned for SKU ${sku}`, payload);
+      throw new WalmartClientError(
+        404,
+        "WALMART_ITEM_NOT_FOUND",
+        items.length > 0
+          ? `Walmart returned ${items.length} item(s) but none matched SKU ${sku}`
+          : `No Walmart item was returned for SKU ${sku}`,
+        payload,
+      );
     }
 
     return {
@@ -381,13 +402,13 @@ export class WalmartClient {
     feedType: string,
     payload: unknown,
     params?: QueryParams,
-    options?: { contentType?: string },
+    options?: { contentType?: string; filename?: string },
   ): Promise<unknown> {
     const mimeType = options?.contentType
       || (typeof payload === "string" && payload.trim().startsWith("<")
         ? "application/xml"
         : "application/json");
-    const filename = mimeType.includes("xml") ? "feed.xml" : "feed.json";
+    const filename = options?.filename || defaultFeedFilename(mimeType);
 
     return this.request({
       method: "POST",

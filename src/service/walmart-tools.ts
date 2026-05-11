@@ -15,10 +15,17 @@ const listingPathPrefixes = [
 ];
 
 function assertListingPathAllowed(path: string): void {
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  const isAllowed = listingPathPrefixes.some((prefix) => normalizedPath.startsWith(prefix));
+  const rawPath = path.startsWith("/") ? path : `/${path}`;
+  // Reject any encoded or literal traversal segment / backslash escape so URL
+  // normalization cannot turn /v3/items/../orders into /v3/orders.
+  if (rawPath.includes("..") || /%2e/i.test(rawPath) || rawPath.includes("\\") || /%5c/i.test(rawPath)) {
+    throw new Error(`Path contains disallowed traversal or escape sequence: ${rawPath}`);
+  }
+  const queryIdx = rawPath.search(/[?#]/);
+  const pathSegment = queryIdx >= 0 ? rawPath.slice(0, queryIdx) : rawPath;
+  const isAllowed = listingPathPrefixes.some((prefix) => pathSegment.startsWith(prefix));
   if (!isAllowed) {
-    throw new Error(`Path is outside the listing-only scope: ${normalizedPath}`);
+    throw new Error(`Path is outside the listing-only scope: ${pathSegment}`);
   }
 }
 
@@ -214,15 +221,21 @@ function registerListingTools(server: McpServer): void {
       feedType: z.string().describe("Feed type, for example MP_ITEM or price."),
       payload: z.any().describe("Exact Walmart feed payload body (object for JSON, string for XML)."),
       params: paramsSchema.describe("Optional extra query parameters such as feedVersion or locale."),
-      contentType: z.string().optional().describe("Optional feed content type. Defaults to application/json, set to application/xml for XML feeds."),
+      contentType: z.string().optional().describe("Optional feed content type. Defaults to application/json, set to application/xml for XML feeds, application/zip for bulk feeds."),
+      filename: z.string().optional().describe("Optional filename for the multipart upload. Defaults to feed.json/feed.xml/feed.zip based on contentType."),
       sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
     },
-    async (input) => withClient(input, async (client) => client.submitFeed(
-      String(input.feedType),
-      input.payload,
-      input.params as Record<string, string | number | boolean | undefined> | undefined,
-      typeof input.contentType === "string" ? { contentType: input.contentType } : undefined,
-    )),
+    async (input) => withClient(input, async (client) => {
+      const feedOptions: { contentType?: string; filename?: string } = {};
+      if (typeof input.contentType === "string") feedOptions.contentType = input.contentType;
+      if (typeof input.filename === "string") feedOptions.filename = input.filename;
+      return client.submitFeed(
+        String(input.feedType),
+        input.payload,
+        input.params as Record<string, string | number | boolean | undefined> | undefined,
+        Object.keys(feedOptions).length > 0 ? feedOptions : undefined,
+      );
+    }),
   );
 
   registerTool(
