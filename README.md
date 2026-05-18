@@ -96,3 +96,22 @@ Ready-to-edit examples:
   - `/v3/utilities/taxonomy`
 - Access tokens are cached in memory per profile or credential set.
 - `walmart_get_item_status` derives publication and lifecycle fields from the item lookup response for the requested SKU.
+
+## Security
+
+**Credentials**
+- `WALMART_CLIENT_ID` and `WALMART_CLIENT_SECRET` are required for authentication. Pass them via `.env` (local dev) or the MCP client `env` block (Codex / Claude). Never hard-code in scripts.
+- Persisted seller profiles live in `.walmart-seller-profiles.json` and contain `clientSecret`. The default `.gitignore` already excludes this file — **do not check it in**.
+- Access tokens are cached in memory only; they expire automatically and refresh on 401.
+
+**Tool surface**
+- `walmart_invoke_listing_api` accepts an arbitrary HTTP method and path. The path is validated against an allow-list (see Notes) and rejects `..` / `%2e` / `\\` / `%5c` traversal sequences. Still, treat this tool as **destructive and non-idempotent** — agents should confirm with the user before invoking with `DELETE` / `PUT` / `POST`.
+- Tool annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) are set conservatively. MCP clients use these to decide whether to prompt the user before executing.
+
+**Prompt injection**
+- Walmart API responses (item titles, descriptions, feed messages) can contain text controlled by sellers or buyers. When the agent surfaces this text it is **untrusted input to the LLM**. Do not auto-chain destructive tools based on returned content; require explicit user confirmation for any write triggered by data found in a read.
+
+**Error & log hygiene**
+- Fatal errors are logged to stderr without stack traces to avoid leaking internal paths.
+- Tool error payloads pass through `redactValue` to strip keys matching `secret|password|token|authorization|access_key|api_key|client_secret`.
+- The stdio transport uses stdout for the JSON-RPC stream; only stderr is safe for diagnostic output.

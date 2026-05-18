@@ -25,6 +25,5 @@ async function main(): Promise<void> {
 
 main().catch((error) => {
   console.error("Fatal error:", error instanceof Error ? error.message : String(error));
-  console.error("Stack trace:", error instanceof Error ? error.stack : "No stack trace available");
   process.exit(1);
 });
