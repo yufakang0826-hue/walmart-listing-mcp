@@ -3,6 +3,14 @@ import { z } from "zod";
 import { serializeError, serializeSuccess } from "../helper/format.js";
 import { authService } from "./auth-service.js";
 
+type ToolAnnotations = {
+  title?: string;
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+  openWorldHint?: boolean;
+};
+
 const methodSchema = z.enum(["GET", "POST", "PUT", "DELETE", "PATCH"]);
 const paramsSchema = z.record(z.union([z.string(), z.number(), z.boolean()])).optional();
 
@@ -35,14 +43,23 @@ function registerTool(
   description: string,
   inputSchema: Record<string, z.ZodTypeAny>,
   handler: (input: Record<string, unknown>) => Promise<unknown>,
+  annotations: ToolAnnotations,
 ): void {
-  server.tool(name, description, inputSchema, async (input) => {
-    try {
-      return serializeSuccess(await handler(input));
-    } catch (error) {
-      return serializeError(error);
-    }
-  });
+  server.registerTool(
+    name,
+    {
+      description,
+      inputSchema,
+      annotations,
+    },
+    async (input: Record<string, unknown>) => {
+      try {
+        return serializeSuccess(await handler(input));
+      } catch (error) {
+        return serializeError(error);
+      }
+    },
+  );
 }
 
 async function withClient(
@@ -53,6 +70,43 @@ async function withClient(
   const client = authService.createClient(sellerProfileId);
   return handler(client);
 }
+
+// Annotation presets — keep one source of truth so reviewers can audit
+// behavior hints at a glance.
+const READ_LOCAL: ToolAnnotations = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false,
+};
+
+const READ_REMOTE: ToolAnnotations = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: true,
+};
+
+const WRITE_LOCAL: ToolAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: true,
+  idempotentHint: true,
+  openWorldHint: false,
+};
+
+const WRITE_REMOTE_IDEMPOTENT: ToolAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: true,
+  idempotentHint: true,
+  openWorldHint: true,
+};
+
+const WRITE_REMOTE_NONIDEMPOTENT: ToolAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: true,
+  idempotentHint: false,
+  openWorldHint: true,
+};
 
 export async function registerWalmartTools(server: McpServer): Promise<void> {
   registerAuthTools(server);
@@ -86,6 +140,7 @@ function registerAuthTools(server: McpServer): void {
       svcEnv: typeof input.svcEnv === "string" ? input.svcEnv : undefined,
       setActive: typeof input.setActive === "boolean" ? input.setActive : true,
     }),
+    WRITE_LOCAL,
   );
 
   registerTool(
@@ -94,6 +149,7 @@ function registerAuthTools(server: McpServer): void {
     "List locally stored Walmart seller profiles and indicate which one is active.",
     {},
     async () => ({ sellerProfiles: authService.listSellerProfiles() }),
+    READ_LOCAL,
   );
 
   registerTool(
@@ -107,6 +163,7 @@ function registerAuthTools(server: McpServer): void {
       success: true,
       activeSellerProfile: authService.setActiveSellerProfile(String(input.sellerProfileId)),
     }),
+    WRITE_LOCAL,
   );
 
   registerTool(
@@ -117,6 +174,7 @@ function registerAuthTools(server: McpServer): void {
       sellerProfileId: z.string().optional().describe("Optional seller profile ID. If omitted, the active profile is used first."),
     },
     async (input) => authService.getTokenStatus(typeof input.sellerProfileId === "string" ? input.sellerProfileId : undefined),
+    READ_LOCAL,
   );
 
   registerTool(
@@ -127,6 +185,7 @@ function registerAuthTools(server: McpServer): void {
       sellerProfileId: z.string().optional().describe("Optional seller profile ID. If omitted, the active profile is used first."),
     },
     async (input) => authService.verifyCredentials(typeof input.sellerProfileId === "string" ? input.sellerProfileId : undefined),
+    READ_REMOTE,
   );
 }
 
@@ -134,7 +193,7 @@ function registerListingTools(server: McpServer): void {
   registerTool(
     server,
     "walmart_invoke_listing_api",
-    "Invoke a Walmart listing-related Marketplace API directly. Restricted to items, inventory, price, feeds, and taxonomy endpoints.",
+    "Invoke a Walmart listing-related Marketplace API directly. Restricted to /v3/items, /v3/inventory, /v3/price, /v3/feeds, /v3/utilities/taxonomy. Path traversal (.. or %2e) is blocked. Supported methods: GET, POST, PUT, DELETE, PATCH.",
     {
       method: methodSchema.describe("HTTP method."),
       path: z.string().describe("Marketplace API path such as /v3/items, /v3/feeds, or /v3/inventory."),
@@ -156,6 +215,9 @@ function registerListingTools(server: McpServer): void {
         typeof input.accept === "string" ? input.accept : undefined,
       );
     }),
+    // Worst-case: caller can issue any HTTP method against any allowed path,
+    // including destructive deletes. Hint conservatively.
+    WRITE_REMOTE_NONIDEMPOTENT,
   );
 
   registerTool(
@@ -175,6 +237,7 @@ function registerListingTools(server: McpServer): void {
       sku: input.sku as string | undefined,
       lifecycleStatus: input.lifecycleStatus as string | undefined,
     })),
+    READ_REMOTE,
   );
 
   registerTool(
@@ -186,6 +249,7 @@ function registerListingTools(server: McpServer): void {
       sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
     },
     async (input) => withClient(input, async (client) => client.getItem(String(input.sku))),
+    READ_REMOTE,
   );
 
   registerTool(
@@ -197,6 +261,7 @@ function registerListingTools(server: McpServer): void {
       sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
     },
     async (input) => withClient(input, async (client) => client.getItemStatus(String(input.sku))),
+    READ_REMOTE,
   );
 
   registerTool(
@@ -211,6 +276,7 @@ function registerListingTools(server: McpServer): void {
       success: true,
       result: await client.retireItem(String(input.sku)),
     })),
+    WRITE_REMOTE_IDEMPOTENT,
   );
 
   registerTool(
@@ -236,6 +302,8 @@ function registerListingTools(server: McpServer): void {
         Object.keys(feedOptions).length > 0 ? feedOptions : undefined,
       );
     }),
+    // Each submission creates a new feed with a new feedId — not idempotent.
+    WRITE_REMOTE_NONIDEMPOTENT,
   );
 
   registerTool(
@@ -247,6 +315,7 @@ function registerListingTools(server: McpServer): void {
       sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
     },
     async (input) => withClient(input, async (client) => client.getFeedStatus(String(input.feedId))),
+    READ_REMOTE,
   );
 
   registerTool(
@@ -264,6 +333,7 @@ function registerListingTools(server: McpServer): void {
       limit: input.limit as number | undefined,
       offset: input.offset as number | undefined,
     })),
+    READ_REMOTE,
   );
 
   registerTool(
@@ -279,6 +349,7 @@ function registerListingTools(server: McpServer): void {
       typeof input.feedType === "string" ? input.feedType : undefined,
       typeof input.version === "string" ? input.version : undefined,
     )),
+    READ_REMOTE,
   );
 
   registerTool(
@@ -289,6 +360,7 @@ function registerListingTools(server: McpServer): void {
       sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
     },
     async (input) => withClient(input, async (client) => client.getDepartments()),
+    READ_REMOTE,
   );
 
   registerTool(
@@ -300,6 +372,7 @@ function registerListingTools(server: McpServer): void {
       sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
     },
     async (input) => withClient(input, async (client) => client.getInventory(String(input.sku))),
+    READ_REMOTE,
   );
 
   registerTool(
@@ -315,6 +388,7 @@ function registerListingTools(server: McpServer): void {
       limit: input.limit as number | undefined,
       offset: input.offset as number | undefined,
     })),
+    READ_REMOTE,
   );
 
   registerTool(
@@ -327,6 +401,7 @@ function registerListingTools(server: McpServer): void {
       sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
     },
     async (input) => withClient(input, async (client) => client.updateInventory(String(input.sku), input.payload)),
+    WRITE_REMOTE_IDEMPOTENT,
   );
 
   registerTool(
@@ -338,5 +413,6 @@ function registerListingTools(server: McpServer): void {
       sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
     },
     async (input) => withClient(input, async (client) => client.updatePrice(input.payload)),
+    WRITE_REMOTE_IDEMPOTENT,
   );
 }

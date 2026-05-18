@@ -1,12 +1,26 @@
-export function serializeSuccess(value: unknown): { content: [{ type: "text"; text: string }] } {
+export function serializeSuccess(value: unknown): {
+  content: [{ type: "text"; text: string }];
+  structuredContent?: Record<string, unknown>;
+} {
+  const text = JSON.stringify(value, null, 2);
+  const structuredContent = toStructured(value);
   return {
-    content: [
-      {
-        type: "text",
-        text: JSON.stringify(value, null, 2),
-      },
-    ],
+    content: [{ type: "text", text }],
+    ...(structuredContent !== undefined ? { structuredContent } : {}),
   };
+}
+
+function toStructured(value: unknown): Record<string, unknown> | undefined {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+  if (Array.isArray(value)) {
+    return { items: value };
+  }
+  if (typeof value === "object") {
+    return value as Record<string, unknown>;
+  }
+  return { result: value };
 }
 
 export function serializeError(error: unknown): { content: [{ type: "text"; text: string }]; isError: true } {
