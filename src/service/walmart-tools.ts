@@ -12,31 +12,7 @@ type ToolAnnotations = {
   openWorldHint?: boolean;
 };
 
-const methodSchema = z.enum(["GET", "POST", "PUT", "DELETE", "PATCH"]);
 const paramsSchema = z.record(z.union([z.string(), z.number(), z.boolean()])).optional();
-
-export const listingPathPrefixes = [
-  "/v3/items",
-  "/v3/inventory",
-  "/v3/price",
-  "/v3/feeds",
-  "/v3/utilities/taxonomy",
-];
-
-export function assertListingPathAllowed(path: string): void {
-  const rawPath = path.startsWith("/") ? path : `/${path}`;
-  // Reject any encoded or literal traversal segment / backslash escape so URL
-  // normalization cannot turn /v3/items/../orders into /v3/orders.
-  if (rawPath.includes("..") || /%2e/i.test(rawPath) || rawPath.includes("\\") || /%5c/i.test(rawPath)) {
-    throw new Error(`Path contains disallowed traversal or escape sequence: ${rawPath}`);
-  }
-  const queryIdx = rawPath.search(/[?#]/);
-  const pathSegment = queryIdx >= 0 ? rawPath.slice(0, queryIdx) : rawPath;
-  const isAllowed = listingPathPrefixes.some((prefix) => pathSegment.startsWith(prefix));
-  if (!isAllowed) {
-    throw new Error(`Path is outside the listing-only scope: ${pathSegment}`);
-  }
-}
 
 function registerTool<TInput extends z.ZodObject<z.ZodRawShape>>(
   server: McpServer,
@@ -287,39 +263,6 @@ function registerAuthTools(server: McpServer): void {
 function registerListingTools(server: McpServer): void {
   registerTool(
     server,
-    "walmart_invoke_listing_api",
-    "Invoke a Walmart listing-related Marketplace API directly. Restricted to /v3/items, /v3/inventory, /v3/price, /v3/feeds, /v3/utilities/taxonomy. Path traversal (.. or %2e) is blocked. Supported methods: GET, POST, PUT, DELETE, PATCH.",
-    z
-      .object({
-        method: methodSchema.describe("HTTP method."),
-        path: z.string().describe("Marketplace API path such as /v3/items, /v3/feeds, or /v3/inventory."),
-        params: paramsSchema.describe("Optional query parameters."),
-        body: z.any().optional().describe("Optional request body."),
-        contentType: z.string().optional().describe("Optional Content-Type header. Defaults to application/json."),
-        accept: z.string().optional().describe("Optional Accept header. Defaults to application/json."),
-        sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
-      })
-      .strict(),
-    passthroughShape,
-    async (input) =>
-      withClient(input.sellerProfileId, async (client) => {
-        assertListingPathAllowed(input.path);
-        return client.invokeMarketplaceApi(
-          input.method,
-          input.path,
-          input.params,
-          input.body,
-          input.contentType,
-          input.accept,
-        );
-      }),
-    // Worst-case: caller can issue any HTTP method against any allowed path,
-    // including destructive deletes. Hint conservatively.
-    WRITE_REMOTE_NONIDEMPOTENT,
-  );
-
-  registerTool(
-    server,
     "walmart_get_items",
     "List Walmart items for the active seller profile.",
     z
@@ -563,6 +506,43 @@ function registerListingTools(server: McpServer): void {
     async (input) =>
       withClient(input.sellerProfileId, async (client) => client.updateInventory(input.sku, input.payload)),
     WRITE_REMOTE_IDEMPOTENT,
+  );
+
+  registerTool(
+    server,
+    "walmart_get_price",
+    "Get Walmart price information for a single SKU.",
+    z
+      .object({
+        sku: z.string().describe("Seller SKU."),
+        sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
+      })
+      .strict(),
+    passthroughShape,
+    async (input) => withClient(input.sellerProfileId, async (client) => client.getPrice(input.sku)),
+    READ_REMOTE,
+  );
+
+  registerTool(
+    server,
+    "walmart_get_bulk_price",
+    "List Walmart price records across SKUs. Use limit/offset for pagination.",
+    z
+      .object({
+        limit: z.number().optional().describe("Optional page size."),
+        offset: z.number().optional().describe("Optional offset."),
+        sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
+      })
+      .strict(),
+    passthroughShape,
+    async (input) =>
+      withClient(input.sellerProfileId, async (client) =>
+        client.getBulkPrice({
+          limit: input.limit,
+          offset: input.offset,
+        }),
+      ),
+    READ_REMOTE,
   );
 
   registerTool(

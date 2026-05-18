@@ -7,7 +7,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 function initServer(): McpServer {
   return new McpServer({
     name: "walmart-mcp-server",
-    version: "0.1.0",
+    version: "0.2.0",
   });
 }
 

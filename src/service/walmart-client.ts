@@ -359,10 +359,6 @@ export class WalmartClient {
     throw new WalmartClientError(502, "WALMART_NETWORK_ERROR", `Walmart request failed: ${String(lastError)}`, lastError);
   }
 
-  async invokeMarketplaceApi(method: HttpMethod, path: string, params?: QueryParams, body?: unknown, contentType?: string, accept?: string): Promise<unknown> {
-    return this.request({ method, path, params, body, contentType, accept });
-  }
-
   async getItems(params?: QueryParams): Promise<unknown> {
     return this.request({ method: "GET", path: "/v3/items", params });
   }
@@ -454,6 +450,14 @@ export class WalmartClient {
 
   async updatePrice(payload: unknown): Promise<unknown> {
     return this.request({ method: "PUT", path: "/v3/price", body: payload });
+  }
+
+  async getPrice(sku: string): Promise<unknown> {
+    return this.request({ method: "GET", path: "/v3/price", params: { sku } });
+  }
+
+  async getBulkPrice(params?: QueryParams): Promise<unknown> {
+    return this.request({ method: "GET", path: "/v3/price", params });
   }
 
   getContext(): { sellerProfileId: string | null; marketplace: string; sandbox: boolean } {

@@ -193,24 +193,19 @@ env = { WALMART_CLIENT_ID = "your_client_id", WALMART_CLIENT_SECRET = "your_clie
 - `walmart_get_taxonomy`
 - `walmart_get_departments`
 
-### 库存与价格
+### 库存
 
 - `walmart_get_inventory`
 - `walmart_get_bulk_inventory`
 - `walmart_update_inventory`
+
+### 价格
+
+- `walmart_get_price`
+- `walmart_get_bulk_price`
 - `walmart_update_price`
 
-### 兜底调用
-
-- `walmart_invoke_listing_api`
-
-这个工具只允许以下路径前缀：
-
-- `/v3/items`
-- `/v3/inventory`
-- `/v3/price`
-- `/v3/feeds`
-- `/v3/utilities/taxonomy`
+> v0.2.0 起，原先的兜底工具 `walmart_invoke_listing_api` 已移除。所有操作都通过专用工具调用——这样可以让 LLM 用错路径的概率降到 0，也避免 prompt injection 把它诱导到任意端点。
 
 ## 7. 常见问题
 
