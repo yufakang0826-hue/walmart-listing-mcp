@@ -11,16 +11,29 @@ Current scope:
 - feeds
 - taxonomy / departments
 - inventory
-- price
-- direct listing API invocation for listing-related endpoints only
+- price (read and write)
 
-Not included in this version:
+Not included:
 
 - orders
 - returns
 - WFS
 - Walmart Connect ads
 - reconciliation / finance reports
+
+## Breaking change in v0.2.0
+
+The wildcard tool `walmart_invoke_listing_api` has been **removed**. Every operation now goes through a dedicated, typed tool. Migration:
+
+| Old call | New tool |
+|---|---|
+| `walmart_invoke_listing_api({ method: "GET", path: "/v3/price?sku=..." })` | `walmart_get_price({ sku })` |
+| `walmart_invoke_listing_api({ method: "GET", path: "/v3/price" })` | `walmart_get_bulk_price({ limit, offset })` |
+| `walmart_invoke_listing_api({ method: "GET", path: "/v3/items?..." })` | `walmart_get_items` |
+| `walmart_invoke_listing_api({ method: "DELETE", path: "/v3/items/<sku>" })` | `walmart_retire_item({ sku })` |
+| `walmart_invoke_listing_api({ method: "POST", path: "/v3/feeds?feedType=..." })` | `walmart_submit_feed({ feedType, payload })` |
+
+If you need an endpoint not covered above, open an issue or a PR adding a dedicated tool — the design choice is "no escape hatch" so the LLM cannot be tricked into hitting an unintended endpoint.
 
 ## Setup
 
@@ -62,38 +75,44 @@ Ready-to-edit examples:
 - [examples/codex-config.toml](./examples/codex-config.toml)
 - [examples/claude-settings.json](./examples/claude-settings.json)
 
-## Main Tools
+## Tools (20 total)
 
+**Auth / profile management (5)**
 - `walmart_upsert_seller_profile`
 - `walmart_list_seller_profiles`
 - `walmart_set_active_seller_profile`
 - `walmart_get_token_status`
 - `walmart_verify_credentials`
-- `walmart_invoke_listing_api`
+
+**Items (4)**
 - `walmart_get_items`
 - `walmart_get_item`
 - `walmart_get_item_status`
 - `walmart_retire_item`
+
+**Feeds (3)**
 - `walmart_submit_feed`
 - `walmart_get_feed_status`
 - `walmart_get_feeds`
+
+**Taxonomy (2)**
 - `walmart_get_taxonomy`
 - `walmart_get_departments`
+
+**Inventory (3)**
 - `walmart_get_inventory`
 - `walmart_get_bulk_inventory`
 - `walmart_update_inventory`
+
+**Price (3)**
+- `walmart_get_price`
+- `walmart_get_bulk_price`
 - `walmart_update_price`
 
 ## Notes
 
 - Seller profiles are stored locally in `.walmart-seller-profiles.json`.
 - For Codex / Claude integrations, prefer putting credentials in the MCP `env` block and set `WALMART_SELLER_PROFILE_STORE` to an absolute path.
-- `walmart_invoke_listing_api` is restricted to:
-  - `/v3/items`
-  - `/v3/inventory`
-  - `/v3/price`
-  - `/v3/feeds`
-  - `/v3/utilities/taxonomy`
 - Access tokens are cached in memory per profile or credential set.
 - `walmart_get_item_status` derives publication and lifecycle fields from the item lookup response for the requested SKU.
 
@@ -105,13 +124,17 @@ Ready-to-edit examples:
 - Access tokens are cached in memory only; they expire automatically and refresh on 401.
 
 **Tool surface**
-- `walmart_invoke_listing_api` accepts an arbitrary HTTP method and path. The path is validated against an allow-list (see Notes) and rejects `..` / `%2e` / `\\` / `%5c` traversal sequences. Still, treat this tool as **destructive and non-idempotent** — agents should confirm with the user before invoking with `DELETE` / `PUT` / `POST`.
+- No wildcard / escape-hatch tool. Every tool wraps exactly one Walmart endpoint with a typed schema, so the LLM cannot be coerced into hitting an arbitrary path or method via prompt injection.
 - Tool annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) are set conservatively. MCP clients use these to decide whether to prompt the user before executing.
 
 **Prompt injection**
-- Walmart API responses (item titles, descriptions, feed messages) can contain text controlled by sellers or buyers. When the agent surfaces this text it is **untrusted input to the LLM**. Do not auto-chain destructive tools based on returned content; require explicit user confirmation for any write triggered by data found in a read.
+- Walmart API responses (item titles, descriptions, feed messages) can contain text controlled by sellers or buyers. The server prefixes external responses with an `EXTERNAL DATA` warning and marks `structuredContent._source = "walmart_api_untrusted"` so consumers can recognize untrusted data. Do not auto-chain destructive tools based on returned content; require explicit user confirmation for any write triggered by data found in a read.
 
 **Error & log hygiene**
 - Fatal errors are logged to stderr without stack traces to avoid leaking internal paths.
 - Tool error payloads pass through `redactValue` to strip keys matching `secret|password|token|authorization|access_key|api_key|client_secret`.
 - The stdio transport uses stdout for the JSON-RPC stream; only stderr is safe for diagnostic output.
+
+## Evaluation
+
+See [`evaluation/`](./evaluation/) for the mcp-builder Phase 4 evaluation suite (10 questions, target ≥ 8 / 10 pass).
