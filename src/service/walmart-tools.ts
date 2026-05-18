@@ -1,4 +1,5 @@
 import { type McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { serializeError, serializeSuccess } from "../helper/format.js";
 import { authService } from "./auth-service.js";
@@ -37,36 +38,41 @@ export function assertListingPathAllowed(path: string): void {
   }
 }
 
-function registerTool(
+function registerTool<TInput extends z.ZodObject<z.ZodRawShape>>(
   server: McpServer,
   name: string,
   description: string,
-  inputSchema: Record<string, z.ZodTypeAny>,
-  handler: (input: Record<string, unknown>) => Promise<unknown>,
+  inputSchema: TInput,
+  outputSchema: z.ZodObject<z.ZodRawShape>,
+  handler: (input: z.infer<TInput>) => Promise<unknown>,
   annotations: ToolAnnotations,
 ): void {
+  // Tell serializeSuccess whether the payload originated outside our trust
+  // boundary so it can wrap text content with the untrusted-input warning.
+  const source = annotations.openWorldHint ? "external" : "local";
+
   server.registerTool(
     name,
     {
       description,
       inputSchema,
+      outputSchema,
       annotations,
     },
-    async (input: Record<string, unknown>) => {
+    (async (input: z.infer<TInput>) => {
       try {
-        return serializeSuccess(await handler(input));
+        return serializeSuccess(await handler(input), source) as CallToolResult;
       } catch (error) {
-        return serializeError(error);
+        return serializeError(error) as CallToolResult;
       }
-    },
+    }) as Parameters<typeof server.registerTool>[2],
   );
 }
 
-async function withClient(
-  input: Record<string, unknown>,
-  handler: (client: ReturnType<typeof authService.createClient>) => Promise<unknown>,
-): Promise<unknown> {
-  const sellerProfileId = typeof input.sellerProfileId === "string" ? input.sellerProfileId : undefined;
+async function withClient<T>(
+  sellerProfileId: string | undefined,
+  handler: (client: ReturnType<typeof authService.createClient>) => Promise<T>,
+): Promise<T> {
   const client = authService.createClient(sellerProfileId);
   return handler(client);
 }
@@ -108,6 +114,67 @@ const WRITE_REMOTE_NONIDEMPOTENT: ToolAnnotations = {
   openWorldHint: true,
 };
 
+// Output-schema presets. Walmart response shapes are large and partially
+// undocumented, so we list the fields agents actually rely on and use
+// .passthrough() to keep the rest available without making the schema brittle.
+const sellerProfileShape = z
+  .object({
+    sellerProfileId: z.string(),
+    sellerProfileLabel: z.string().optional(),
+    marketplace: z.string(),
+    channelType: z.string().nullable().optional(),
+    consumerId: z.string().nullable().optional(),
+    svcEnv: z.string(),
+    hasClientId: z.boolean(),
+    hasClientSecret: z.boolean(),
+    isActive: z.boolean(),
+    updatedAt: z.string(),
+  })
+  .passthrough();
+
+const tokenStatusShape = z
+  .object({
+    sellerProfileId: z.string().nullable().optional(),
+    hasCredentials: z.boolean().optional(),
+    isCached: z.boolean().optional(),
+    expiresAt: z.union([z.string(), z.number()]).nullable().optional(),
+  })
+  .passthrough();
+
+const walmartItemListShape = z
+  .object({
+    ItemResponse: z.array(z.unknown()).optional(),
+    totalItems: z.number().optional(),
+    nextCursor: z.string().nullable().optional(),
+  })
+  .passthrough();
+
+const walmartFeedSubmitShape = z
+  .object({
+    feedId: z.string().optional(),
+  })
+  .passthrough();
+
+const walmartFeedStatusShape = z
+  .object({
+    feedId: z.string().optional(),
+    feedStatus: z.string().optional(),
+    feedSource: z.string().optional(),
+    itemsReceived: z.number().optional(),
+    itemsSucceeded: z.number().optional(),
+    itemsFailed: z.number().optional(),
+    itemsProcessing: z.number().optional(),
+  })
+  .passthrough();
+
+const passthroughShape = z.object({}).passthrough();
+
+const successShape = z
+  .object({
+    success: z.boolean(),
+  })
+  .passthrough();
+
 export async function registerWalmartTools(server: McpServer): Promise<void> {
   registerAuthTools(server);
   registerListingTools(server);
@@ -118,28 +185,32 @@ function registerAuthTools(server: McpServer): void {
     server,
     "walmart_upsert_seller_profile",
     "Create or update a Walmart seller profile. Stores clientId, clientSecret, marketplace, channelType, consumerId, and svcEnv locally.",
-    {
-      sellerProfileId: z.string().describe("Seller profile ID, for example walmart-us-main."),
-      sellerProfileLabel: z.string().optional().describe("Optional human-readable label for the seller profile."),
-      marketplace: z.string().optional().describe("Marketplace code such as US, CA, or MX."),
-      clientId: z.string().optional().describe("Optional Walmart client ID."),
-      clientSecret: z.string().optional().describe("Optional Walmart client secret."),
-      channelType: z.string().optional().describe("Optional WM_CONSUMER.CHANNEL.TYPE (Consumer Channel Type UUID) from Walmart Developer Portal."),
-      consumerId: z.string().optional().describe("Optional WM_CONSUMER.ID (Consumer ID) from Walmart Developer Portal. Required by Walmart routing layer for feeds."),
-      svcEnv: z.string().optional().describe("Optional WM_SVC.ENV value. Defaults to 'prod' (or 'stg' when WALMART_SANDBOX=true)."),
-      setActive: z.boolean().default(true).describe("Whether to make this profile active immediately."),
-    },
-    async (input) => authService.upsertSellerProfile({
-      sellerProfileId: String(input.sellerProfileId),
-      sellerProfileLabel: typeof input.sellerProfileLabel === "string" ? input.sellerProfileLabel : undefined,
-      marketplace: typeof input.marketplace === "string" ? input.marketplace : undefined,
-      clientId: typeof input.clientId === "string" ? input.clientId : undefined,
-      clientSecret: typeof input.clientSecret === "string" ? input.clientSecret : undefined,
-      channelType: typeof input.channelType === "string" ? input.channelType : undefined,
-      consumerId: typeof input.consumerId === "string" ? input.consumerId : undefined,
-      svcEnv: typeof input.svcEnv === "string" ? input.svcEnv : undefined,
-      setActive: typeof input.setActive === "boolean" ? input.setActive : true,
-    }),
+    z
+      .object({
+        sellerProfileId: z.string().describe("Seller profile ID, for example walmart-us-main."),
+        sellerProfileLabel: z.string().optional().describe("Optional human-readable label for the seller profile."),
+        marketplace: z.string().optional().describe("Marketplace code such as US, CA, or MX."),
+        clientId: z.string().optional().describe("Optional Walmart client ID."),
+        clientSecret: z.string().optional().describe("Optional Walmart client secret."),
+        channelType: z.string().optional().describe("Optional WM_CONSUMER.CHANNEL.TYPE (Consumer Channel Type UUID) from Walmart Developer Portal."),
+        consumerId: z.string().optional().describe("Optional WM_CONSUMER.ID (Consumer ID) from Walmart Developer Portal. Required by Walmart routing layer for feeds."),
+        svcEnv: z.string().optional().describe("Optional WM_SVC.ENV value. Defaults to 'prod' (or 'stg' when WALMART_SANDBOX=true)."),
+        setActive: z.boolean().default(true).describe("Whether to make this profile active immediately."),
+      })
+      .strict(),
+    sellerProfileShape,
+    async (input) =>
+      authService.upsertSellerProfile({
+        sellerProfileId: input.sellerProfileId,
+        sellerProfileLabel: input.sellerProfileLabel,
+        marketplace: input.marketplace,
+        clientId: input.clientId,
+        clientSecret: input.clientSecret,
+        channelType: input.channelType,
+        consumerId: input.consumerId,
+        svcEnv: input.svcEnv,
+        setActive: input.setActive,
+      }),
     WRITE_LOCAL,
   );
 
@@ -147,7 +218,12 @@ function registerAuthTools(server: McpServer): void {
     server,
     "walmart_list_seller_profiles",
     "List locally stored Walmart seller profiles and indicate which one is active.",
-    {},
+    z.object({}).strict(),
+    z
+      .object({
+        sellerProfiles: z.array(sellerProfileShape),
+      })
+      .passthrough(),
     async () => ({ sellerProfiles: authService.listSellerProfiles() }),
     READ_LOCAL,
   );
@@ -156,12 +232,20 @@ function registerAuthTools(server: McpServer): void {
     server,
     "walmart_set_active_seller_profile",
     "Set the active Walmart seller profile used by listing tools when sellerProfileId is omitted.",
-    {
-      sellerProfileId: z.string().describe("Seller profile ID to activate."),
-    },
+    z
+      .object({
+        sellerProfileId: z.string().describe("Seller profile ID to activate."),
+      })
+      .strict(),
+    z
+      .object({
+        success: z.boolean(),
+        activeSellerProfile: sellerProfileShape,
+      })
+      .passthrough(),
     async (input) => ({
       success: true,
-      activeSellerProfile: authService.setActiveSellerProfile(String(input.sellerProfileId)),
+      activeSellerProfile: authService.setActiveSellerProfile(input.sellerProfileId),
     }),
     WRITE_LOCAL,
   );
@@ -170,10 +254,13 @@ function registerAuthTools(server: McpServer): void {
     server,
     "walmart_get_token_status",
     "Show the current Walmart authentication status used by this MCP server.",
-    {
-      sellerProfileId: z.string().optional().describe("Optional seller profile ID. If omitted, the active profile is used first."),
-    },
-    async (input) => authService.getTokenStatus(typeof input.sellerProfileId === "string" ? input.sellerProfileId : undefined),
+    z
+      .object({
+        sellerProfileId: z.string().optional().describe("Optional seller profile ID. If omitted, the active profile is used first."),
+      })
+      .strict(),
+    tokenStatusShape,
+    async (input) => authService.getTokenStatus(input.sellerProfileId),
     READ_LOCAL,
   );
 
@@ -181,10 +268,18 @@ function registerAuthTools(server: McpServer): void {
     server,
     "walmart_verify_credentials",
     "Verify that the configured Walmart clientId and clientSecret can fetch an access token.",
-    {
-      sellerProfileId: z.string().optional().describe("Optional seller profile ID. If omitted, the active profile is used first."),
-    },
-    async (input) => authService.verifyCredentials(typeof input.sellerProfileId === "string" ? input.sellerProfileId : undefined),
+    z
+      .object({
+        sellerProfileId: z.string().optional().describe("Optional seller profile ID. If omitted, the active profile is used first."),
+      })
+      .strict(),
+    z
+      .object({
+        ok: z.boolean().optional(),
+        success: z.boolean().optional(),
+      })
+      .passthrough(),
+    async (input) => authService.verifyCredentials(input.sellerProfileId),
     READ_REMOTE,
   );
 }
@@ -194,27 +289,30 @@ function registerListingTools(server: McpServer): void {
     server,
     "walmart_invoke_listing_api",
     "Invoke a Walmart listing-related Marketplace API directly. Restricted to /v3/items, /v3/inventory, /v3/price, /v3/feeds, /v3/utilities/taxonomy. Path traversal (.. or %2e) is blocked. Supported methods: GET, POST, PUT, DELETE, PATCH.",
-    {
-      method: methodSchema.describe("HTTP method."),
-      path: z.string().describe("Marketplace API path such as /v3/items, /v3/feeds, or /v3/inventory."),
-      params: paramsSchema.describe("Optional query parameters."),
-      body: z.any().optional().describe("Optional request body."),
-      contentType: z.string().optional().describe("Optional Content-Type header. Defaults to application/json."),
-      accept: z.string().optional().describe("Optional Accept header. Defaults to application/json."),
-      sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
-    },
-    async (input) => withClient(input, async (client) => {
-      const path = String(input.path);
-      assertListingPathAllowed(path);
-      return client.invokeMarketplaceApi(
-        input.method as "GET" | "POST" | "PUT" | "DELETE" | "PATCH",
-        path,
-        input.params as Record<string, string | number | boolean | undefined> | undefined,
-        input.body,
-        typeof input.contentType === "string" ? input.contentType : undefined,
-        typeof input.accept === "string" ? input.accept : undefined,
-      );
-    }),
+    z
+      .object({
+        method: methodSchema.describe("HTTP method."),
+        path: z.string().describe("Marketplace API path such as /v3/items, /v3/feeds, or /v3/inventory."),
+        params: paramsSchema.describe("Optional query parameters."),
+        body: z.any().optional().describe("Optional request body."),
+        contentType: z.string().optional().describe("Optional Content-Type header. Defaults to application/json."),
+        accept: z.string().optional().describe("Optional Accept header. Defaults to application/json."),
+        sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
+      })
+      .strict(),
+    passthroughShape,
+    async (input) =>
+      withClient(input.sellerProfileId, async (client) => {
+        assertListingPathAllowed(input.path);
+        return client.invokeMarketplaceApi(
+          input.method,
+          input.path,
+          input.params,
+          input.body,
+          input.contentType,
+          input.accept,
+        );
+      }),
     // Worst-case: caller can issue any HTTP method against any allowed path,
     // including destructive deletes. Hint conservatively.
     WRITE_REMOTE_NONIDEMPOTENT,
@@ -224,19 +322,25 @@ function registerListingTools(server: McpServer): void {
     server,
     "walmart_get_items",
     "List Walmart items for the active seller profile.",
-    {
-      limit: z.number().optional().describe("Optional page size."),
-      offset: z.number().optional().describe("Optional offset."),
-      sku: z.string().optional().describe("Optional SKU filter."),
-      lifecycleStatus: z.string().optional().describe("Optional lifecycle status filter."),
-      sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
-    },
-    async (input) => withClient(input, async (client) => client.getItems({
-      limit: input.limit as number | undefined,
-      offset: input.offset as number | undefined,
-      sku: input.sku as string | undefined,
-      lifecycleStatus: input.lifecycleStatus as string | undefined,
-    })),
+    z
+      .object({
+        limit: z.number().optional().describe("Optional page size."),
+        offset: z.number().optional().describe("Optional offset."),
+        sku: z.string().optional().describe("Optional SKU filter."),
+        lifecycleStatus: z.string().optional().describe("Optional lifecycle status filter."),
+        sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
+      })
+      .strict(),
+    walmartItemListShape,
+    async (input) =>
+      withClient(input.sellerProfileId, async (client) =>
+        client.getItems({
+          limit: input.limit,
+          offset: input.offset,
+          sku: input.sku,
+          lifecycleStatus: input.lifecycleStatus,
+        }),
+      ),
     READ_REMOTE,
   );
 
@@ -244,11 +348,14 @@ function registerListingTools(server: McpServer): void {
     server,
     "walmart_get_item",
     "Get a single Walmart item by SKU.",
-    {
-      sku: z.string().describe("Seller SKU."),
-      sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
-    },
-    async (input) => withClient(input, async (client) => client.getItem(String(input.sku))),
+    z
+      .object({
+        sku: z.string().describe("Seller SKU."),
+        sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
+      })
+      .strict(),
+    passthroughShape,
+    async (input) => withClient(input.sellerProfileId, async (client) => client.getItem(input.sku)),
     READ_REMOTE,
   );
 
@@ -256,11 +363,21 @@ function registerListingTools(server: McpServer): void {
     server,
     "walmart_get_item_status",
     "Get Walmart item status fields by SKU using the item lookup response.",
-    {
-      sku: z.string().describe("Seller SKU."),
-      sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
-    },
-    async (input) => withClient(input, async (client) => client.getItemStatus(String(input.sku))),
+    z
+      .object({
+        sku: z.string().describe("Seller SKU."),
+        sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
+      })
+      .strict(),
+    z
+      .object({
+        sku: z.string().optional(),
+        publishedStatus: z.string().optional(),
+        lifecycleStatus: z.string().optional(),
+        availability: z.string().optional(),
+      })
+      .passthrough(),
+    async (input) => withClient(input.sellerProfileId, async (client) => client.getItemStatus(input.sku)),
     READ_REMOTE,
   );
 
@@ -268,14 +385,18 @@ function registerListingTools(server: McpServer): void {
     server,
     "walmart_retire_item",
     "Retire or delist a Walmart item by SKU.",
-    {
-      sku: z.string().describe("Seller SKU."),
-      sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
-    },
-    async (input) => withClient(input, async (client) => ({
-      success: true,
-      result: await client.retireItem(String(input.sku)),
-    })),
+    z
+      .object({
+        sku: z.string().describe("Seller SKU."),
+        sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
+      })
+      .strict(),
+    successShape,
+    async (input) =>
+      withClient(input.sellerProfileId, async (client) => ({
+        success: true,
+        result: await client.retireItem(input.sku),
+      })),
     WRITE_REMOTE_IDEMPOTENT,
   );
 
@@ -283,25 +404,29 @@ function registerListingTools(server: McpServer): void {
     server,
     "walmart_submit_feed",
     "Submit a Walmart feed for listing operations. Payload is uploaded as multipart/form-data (Walmart API requirement). Common feedType values include MP_ITEM and price.",
-    {
-      feedType: z.string().describe("Feed type, for example MP_ITEM or price."),
-      payload: z.any().describe("Exact Walmart feed payload body (object for JSON, string for XML)."),
-      params: paramsSchema.describe("Optional extra query parameters such as feedVersion or locale."),
-      contentType: z.string().optional().describe("Optional feed content type. Defaults to application/json, set to application/xml for XML feeds, application/zip for bulk feeds."),
-      filename: z.string().optional().describe("Optional filename for the multipart upload. Defaults to feed.json/feed.xml/feed.zip based on contentType."),
-      sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
-    },
-    async (input) => withClient(input, async (client) => {
-      const feedOptions: { contentType?: string; filename?: string } = {};
-      if (typeof input.contentType === "string") feedOptions.contentType = input.contentType;
-      if (typeof input.filename === "string") feedOptions.filename = input.filename;
-      return client.submitFeed(
-        String(input.feedType),
-        input.payload,
-        input.params as Record<string, string | number | boolean | undefined> | undefined,
-        Object.keys(feedOptions).length > 0 ? feedOptions : undefined,
-      );
-    }),
+    z
+      .object({
+        feedType: z.string().describe("Feed type, for example MP_ITEM or price."),
+        payload: z.any().describe("Exact Walmart feed payload body (object for JSON, string for XML)."),
+        params: paramsSchema.describe("Optional extra query parameters such as feedVersion or locale."),
+        contentType: z.string().optional().describe("Optional feed content type. Defaults to application/json, set to application/xml for XML feeds, application/zip for bulk feeds."),
+        filename: z.string().optional().describe("Optional filename for the multipart upload. Defaults to feed.json/feed.xml/feed.zip based on contentType."),
+        sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
+      })
+      .strict(),
+    walmartFeedSubmitShape,
+    async (input) =>
+      withClient(input.sellerProfileId, async (client) => {
+        const feedOptions: { contentType?: string; filename?: string } = {};
+        if (typeof input.contentType === "string") feedOptions.contentType = input.contentType;
+        if (typeof input.filename === "string") feedOptions.filename = input.filename;
+        return client.submitFeed(
+          input.feedType,
+          input.payload,
+          input.params,
+          Object.keys(feedOptions).length > 0 ? feedOptions : undefined,
+        );
+      }),
     // Each submission creates a new feed with a new feedId — not idempotent.
     WRITE_REMOTE_NONIDEMPOTENT,
   );
@@ -310,11 +435,14 @@ function registerListingTools(server: McpServer): void {
     server,
     "walmart_get_feed_status",
     "Get Walmart feed processing status by feed ID.",
-    {
-      feedId: z.string().describe("Feed ID returned by Walmart."),
-      sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
-    },
-    async (input) => withClient(input, async (client) => client.getFeedStatus(String(input.feedId))),
+    z
+      .object({
+        feedId: z.string().describe("Feed ID returned by Walmart."),
+        sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
+      })
+      .strict(),
+    walmartFeedStatusShape,
+    async (input) => withClient(input.sellerProfileId, async (client) => client.getFeedStatus(input.feedId)),
     READ_REMOTE,
   );
 
@@ -322,17 +450,33 @@ function registerListingTools(server: McpServer): void {
     server,
     "walmart_get_feeds",
     "List Walmart feeds for the active seller profile.",
-    {
-      feedType: z.string().optional().describe("Optional feed type filter."),
-      limit: z.number().optional().describe("Optional page size."),
-      offset: z.number().optional().describe("Optional offset."),
-      sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
-    },
-    async (input) => withClient(input, async (client) => client.getFeeds({
-      feedType: input.feedType as string | undefined,
-      limit: input.limit as number | undefined,
-      offset: input.offset as number | undefined,
-    })),
+    z
+      .object({
+        feedType: z.string().optional().describe("Optional feed type filter."),
+        limit: z.number().optional().describe("Optional page size."),
+        offset: z.number().optional().describe("Optional offset."),
+        sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
+      })
+      .strict(),
+    z
+      .object({
+        results: z
+          .object({
+            feed: z.array(walmartFeedStatusShape).optional(),
+          })
+          .passthrough()
+          .optional(),
+        totalResults: z.number().optional(),
+      })
+      .passthrough(),
+    async (input) =>
+      withClient(input.sellerProfileId, async (client) =>
+        client.getFeeds({
+          feedType: input.feedType,
+          limit: input.limit,
+          offset: input.offset,
+        }),
+      ),
     READ_REMOTE,
   );
 
@@ -340,15 +484,16 @@ function registerListingTools(server: McpServer): void {
     server,
     "walmart_get_taxonomy",
     "Get Walmart taxonomy data for listing category work.",
-    {
-      feedType: z.string().optional().describe("Feed type, defaults to MP_ITEM."),
-      version: z.string().optional().describe("Taxonomy version, defaults to 5.0."),
-      sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
-    },
-    async (input) => withClient(input, async (client) => client.getTaxonomy(
-      typeof input.feedType === "string" ? input.feedType : undefined,
-      typeof input.version === "string" ? input.version : undefined,
-    )),
+    z
+      .object({
+        feedType: z.string().optional().describe("Feed type, defaults to MP_ITEM."),
+        version: z.string().optional().describe("Taxonomy version, defaults to 5.0."),
+        sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
+      })
+      .strict(),
+    passthroughShape,
+    async (input) =>
+      withClient(input.sellerProfileId, async (client) => client.getTaxonomy(input.feedType, input.version)),
     READ_REMOTE,
   );
 
@@ -356,10 +501,13 @@ function registerListingTools(server: McpServer): void {
     server,
     "walmart_get_departments",
     "Get Walmart departments used for listing taxonomy navigation.",
-    {
-      sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
-    },
-    async (input) => withClient(input, async (client) => client.getDepartments()),
+    z
+      .object({
+        sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
+      })
+      .strict(),
+    passthroughShape,
+    async (input) => withClient(input.sellerProfileId, async (client) => client.getDepartments()),
     READ_REMOTE,
   );
 
@@ -367,11 +515,14 @@ function registerListingTools(server: McpServer): void {
     server,
     "walmart_get_inventory",
     "Get Walmart inventory for a single SKU.",
-    {
-      sku: z.string().describe("Seller SKU."),
-      sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
-    },
-    async (input) => withClient(input, async (client) => client.getInventory(String(input.sku))),
+    z
+      .object({
+        sku: z.string().describe("Seller SKU."),
+        sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
+      })
+      .strict(),
+    passthroughShape,
+    async (input) => withClient(input.sellerProfileId, async (client) => client.getInventory(input.sku)),
     READ_REMOTE,
   );
 
@@ -379,15 +530,21 @@ function registerListingTools(server: McpServer): void {
     server,
     "walmart_get_bulk_inventory",
     "List Walmart inventory records.",
-    {
-      limit: z.number().optional().describe("Optional page size."),
-      offset: z.number().optional().describe("Optional offset."),
-      sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
-    },
-    async (input) => withClient(input, async (client) => client.getBulkInventory({
-      limit: input.limit as number | undefined,
-      offset: input.offset as number | undefined,
-    })),
+    z
+      .object({
+        limit: z.number().optional().describe("Optional page size."),
+        offset: z.number().optional().describe("Optional offset."),
+        sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
+      })
+      .strict(),
+    passthroughShape,
+    async (input) =>
+      withClient(input.sellerProfileId, async (client) =>
+        client.getBulkInventory({
+          limit: input.limit,
+          offset: input.offset,
+        }),
+      ),
     READ_REMOTE,
   );
 
@@ -395,12 +552,16 @@ function registerListingTools(server: McpServer): void {
     server,
     "walmart_update_inventory",
     "Update Walmart inventory for a SKU. The payload should follow Walmart's inventory body shape.",
-    {
-      sku: z.string().describe("Seller SKU."),
-      payload: z.any().describe("Inventory request body."),
-      sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
-    },
-    async (input) => withClient(input, async (client) => client.updateInventory(String(input.sku), input.payload)),
+    z
+      .object({
+        sku: z.string().describe("Seller SKU."),
+        payload: z.any().describe("Inventory request body."),
+        sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
+      })
+      .strict(),
+    passthroughShape,
+    async (input) =>
+      withClient(input.sellerProfileId, async (client) => client.updateInventory(input.sku, input.payload)),
     WRITE_REMOTE_IDEMPOTENT,
   );
 
@@ -408,11 +569,14 @@ function registerListingTools(server: McpServer): void {
     server,
     "walmart_update_price",
     "Update Walmart price for a SKU. The payload should follow Walmart's /v3/price body shape.",
-    {
-      payload: z.any().describe("Price request body."),
-      sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
-    },
-    async (input) => withClient(input, async (client) => client.updatePrice(input.payload)),
+    z
+      .object({
+        payload: z.any().describe("Price request body."),
+        sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
+      })
+      .strict(),
+    passthroughShape,
+    async (input) => withClient(input.sellerProfileId, async (client) => client.updatePrice(input.payload)),
     WRITE_REMOTE_IDEMPOTENT,
   );
 }
