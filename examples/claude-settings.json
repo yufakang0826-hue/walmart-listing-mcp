@@ -1,16 +1,37 @@
 {
+  "_comment_about_this_file": [
+    "Claude Desktop / Claude Code MCP config for walmart-listing-mcp.",
+    "Same JSON shape works for both clients; only the file path differs.",
+    "",
+    "Where to put this:",
+    "  Claude Desktop (Mac)   : ~/Library/Application Support/Claude/claude_desktop_config.json",
+    "  Claude Desktop (Win)   : %APPDATA%\\Claude\\claude_desktop_config.json",
+    "  Claude Desktop (Linux) : ~/.config/Claude/claude_desktop_config.json",
+    "  Claude Code            : .mcp.json at the root of any project that should see the server",
+    "",
+    "Before you paste:",
+    "  1. Replace <ABSOLUTE_PATH_TO_REPO> with the absolute path of this repo on your machine.",
+    "     Examples: /Users/yourname/walmart-listing-mcp  or  C:/Users/yourname/walmart-listing-mcp",
+    "  2. Replace <NODE_PATH> with the absolute path to your node binary, OR just write \"node\"",
+    "     if it's on PATH. Find it via: which node (Mac/Linux) or where node (Windows).",
+    "  3. Fill in WALMART_CLIENT_ID / WALMART_CLIENT_SECRET from https://developer.walmart.com/",
+    "  4. Keep WALMART_SANDBOX as \"true\" until you have run docs/PRODUCTION_VALIDATION.md",
+    "     against your sandbox at least once. Production writes are real money.",
+    "  5. Delete this _comment_about_this_file block before saving — the JSON parser",
+    "     of your MCP client may or may not tolerate it."
+  ],
   "mcpServers": {
     "walmart-listing": {
-      "command": "C:/nvm4w/nodejs/node.exe",
+      "command": "<NODE_PATH>",
       "args": [
-        "C:/Users/Fakang/Desktop/乐好智能ERP/walmart listing MCP/dist/index.js"
+        "<ABSOLUTE_PATH_TO_REPO>/dist/index.js"
       ],
       "env": {
-        "WALMART_CLIENT_ID": "your_client_id",
-        "WALMART_CLIENT_SECRET": "your_client_secret",
+        "WALMART_CLIENT_ID": "<YOUR_CLIENT_ID>",
+        "WALMART_CLIENT_SECRET": "<YOUR_CLIENT_SECRET>",
         "WALMART_MARKETPLACE": "US",
-        "WALMART_SANDBOX": "false",
-        "WALMART_SELLER_PROFILE_STORE": "C:/Users/Fakang/Desktop/乐好智能ERP/walmart listing MCP/.walmart-seller-profiles.json"
+        "WALMART_SANDBOX": "true",
+        "WALMART_SELLER_PROFILE_STORE": "<ABSOLUTE_PATH_TO_REPO>/.walmart-seller-profiles.json"
       }
     }
   }
