@@ -19,13 +19,13 @@
   <!-- STATE-INDEPENDENT: tool inventory -->
   <qa_pair>
     <question>List every tool name this MCP server exposes that starts with the prefix "walmart_get_". Reply with a comma-separated, alphabetically sorted list and nothing else.</question>
-    <answer>walmart_get_bulk_inventory,walmart_get_bulk_price,walmart_get_departments,walmart_get_feed_status,walmart_get_feeds,walmart_get_inventory,walmart_get_item,walmart_get_item_status,walmart_get_items,walmart_get_price,walmart_get_taxonomy,walmart_get_token_status</answer>
+    <answer>walmart_get_bulk_inventory,walmart_get_departments,walmart_get_feed_status,walmart_get_feeds,walmart_get_inventory,walmart_get_item,walmart_get_item_status,walmart_get_items,walmart_get_taxonomy,walmart_get_token_status</answer>
   </qa_pair>
 
   <!-- STATE-INDEPENDENT: total tool count -->
   <qa_pair>
     <question>How many tools total does this MCP server expose? Reply with the number only.</question>
-    <answer>20</answer>
+    <answer>18</answer>
   </qa_pair>
 
   <!-- STATE-INDEPENDENT: no wildcard tool (post-0.2.0) -->
@@ -77,10 +77,10 @@
   </qa_pair>
 
   <!-- SANDBOX-SPECIFIC: cross-tool composition
-       Setup: pick a real SKU in your sandbox; the answer is the price currency for that SKU. -->
+       Setup: ensure your sandbox has at least one item; the answer is its publishedStatus. -->
   <qa_pair>
-    <question>Use walmart_get_items with limit=1 to identify any SKU. Then call walmart_get_price with that SKU. Reply with only the currency code (e.g. USD, CAD) from the returned price record.</question>
-    <answer>USD</answer>
+    <question>Use walmart_get_items with limit=1 to identify any SKU. Then call walmart_get_item with that SKU to inspect its full record. Reply with only the publishedStatus value from the get_item response.</question>
+    <answer>PUBLISHED</answer>
   </qa_pair>
 
 </evaluation>

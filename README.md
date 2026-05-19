@@ -27,8 +27,6 @@ The wildcard tool `walmart_invoke_listing_api` has been **removed**. Every opera
 
 | Old call | New tool |
 |---|---|
-| `walmart_invoke_listing_api({ method: "GET", path: "/v3/price?sku=..." })` | `walmart_get_price({ sku })` |
-| `walmart_invoke_listing_api({ method: "GET", path: "/v3/price" })` | `walmart_get_bulk_price({ limit, offset })` |
 | `walmart_invoke_listing_api({ method: "GET", path: "/v3/items?..." })` | `walmart_get_items` |
 | `walmart_invoke_listing_api({ method: "DELETE", path: "/v3/items/<sku>" })` | `walmart_retire_item({ sku })` |
 | `walmart_invoke_listing_api({ method: "POST", path: "/v3/feeds?feedType=..." })` | `walmart_submit_feed({ feedType, payload })` |
@@ -75,7 +73,7 @@ Ready-to-edit examples:
 - [examples/codex-config.toml](./examples/codex-config.toml)
 - [examples/claude-settings.json](./examples/claude-settings.json)
 
-## Tools (20 total)
+## Tools (18 total)
 
 **Auth / profile management (5)**
 - `walmart_upsert_seller_profile`
@@ -104,10 +102,10 @@ Ready-to-edit examples:
 - `walmart_get_bulk_inventory`
 - `walmart_update_inventory`
 
-**Price (3)**
-- `walmart_get_price`
-- `walmart_get_bulk_price`
+**Price (1)**
 - `walmart_update_price`
+
+> v0.2.0 shipped `walmart_get_price` and `walmart_get_bulk_price` against `/v3/price`. Both returned 404 from Walmart's sandbox (`CONTENT_NOT_FOUND.GMP_GATEWAY_API`) — the Marketplace API does not expose a read endpoint under `/v3/price`. Both tools were removed in v0.2.1. To read current price information, call `walmart_get_item({ sku })` — the item lookup response includes price fields.
 
 ## Notes
 
@@ -115,6 +113,7 @@ Ready-to-edit examples:
 - For Codex / Claude integrations, prefer putting credentials in the MCP `env` block and set `WALMART_SELLER_PROFILE_STORE` to an absolute path.
 - Access tokens are cached in memory per profile or credential set.
 - `walmart_get_item_status` derives publication and lifecycle fields from the item lookup response for the requested SKU.
+- `walmart_get_taxonomy` defaults to `version=4.2` because Walmart sandbox returns 400 INVALID_REQUEST for `version=5.0` and `version=4.6`. Override only if Walmart support tells you to.
 
 ## Security
 
