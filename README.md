@@ -37,45 +37,59 @@ If you need an endpoint not covered above, open an issue or a PR adding a dedica
 
 The `payload` field on `walmart_submit_feed`, `walmart_update_inventory`, and `walmart_update_price` was `z.any()` in v0.2.1 and earlier, which silently allowed `undefined` / `null` / arbitrary scalar inputs. v0.2.2 tightened the schema so the field must be an object (or a string for `submit_feed` XML feeds). **If you were calling these tools with `payload: null`, `payload: "some string"` for non-feed tools, or omitting `payload` entirely, the call will now be rejected at the MCP validation layer (JSON-RPC error `-32602`) before any HTTP request goes out.** Migration: pass a proper request body object.
 
-## Setup
+## Install
 
-1. Install dependencies:
+**5-minute quickstart**: [`docs/QUICKSTART.md`](./docs/QUICKSTART.md) (中文) · [`docs/QUICKSTART_EN.md`](./docs/QUICKSTART_EN.md) (English)
+
+### Option 1 — Clone and build (recommended today)
 
 ```bash
-npm install
+git clone https://github.com/yufakang0826-hue/walmart-listing-mcp.git
+cd walmart-listing-mcp
+npm install && npm run build
 ```
 
-2. Configure credentials with either:
+Then point your MCP client (Claude Desktop / Claude Code / Codex) at `dist/index.js`. See the quickstart for the exact JSON / TOML to paste.
 
-- `.env`
-- or MCP tools such as `walmart_upsert_seller_profile`
+### Option 2 — `npx walmart-mcp-server` (after the package is published to npm)
 
-Example `.env`:
+Reserved for the next publish round. Will run without a local clone.
+
+### Configure credentials
+
+Two ways:
+
+1. **MCP client `env` block** (recommended) — paste credentials into the `env` object of your `claude_desktop_config.json` / `.mcp.json` / `codex config.toml`. They never touch the repo.
+2. **`.env` file at repo root** — works only if your MCP client starts the server with the repo as working directory. `.env` is already gitignored.
+
+Example env:
 
 ```env
 WALMART_CLIENT_ID=your_client_id
 WALMART_CLIENT_SECRET=your_client_secret
 WALMART_MARKETPLACE=US
-WALMART_SANDBOX=false
+WALMART_SANDBOX=true
 ```
 
-3. Build and run:
+**Default `WALMART_SANDBOX=true`** in all examples. Switch to `false` only after running [`docs/PRODUCTION_VALIDATION.md`](./docs/PRODUCTION_VALIDATION.md) — production writes are real money.
+
+### Verify
 
 ```bash
-npm run build
-npm start
+node scripts/smoke-test.mjs       # protocol layer, no credentials needed (12 / 12 PASS)
+node scripts/smoke-test-api.mjs   # live API, requires credentials (10 / 10 PASS on sandbox)
 ```
 
 ## MCP Integration
 
-Complete Codex / Claude integration instructions:
+- **Quickstart**: [`docs/QUICKSTART.md`](./docs/QUICKSTART.md) (中文) · [`docs/QUICKSTART_EN.md`](./docs/QUICKSTART_EN.md) (English)
+- **Full reference**: [`docs/MCP_SETUP_CN.md`](./docs/MCP_SETUP_CN.md) — every tool, multi-profile setup, troubleshooting
+- **Before going production**: [`docs/PRODUCTION_VALIDATION.md`](./docs/PRODUCTION_VALIDATION.md)
 
-- [docs/MCP_SETUP_CN.md](./docs/MCP_SETUP_CN.md)
+Ready-to-edit templates (replace `<ABSOLUTE_PATH_TO_REPO>` and `<NODE_PATH>`):
 
-Ready-to-edit examples:
-
-- [examples/codex-config.toml](./examples/codex-config.toml)
-- [examples/claude-settings.json](./examples/claude-settings.json)
+- [`examples/codex-config.toml`](./examples/codex-config.toml)
+- [`examples/claude-settings.json`](./examples/claude-settings.json) — works for both Claude Desktop and Claude Code
 
 ## Tools (18 total)
 

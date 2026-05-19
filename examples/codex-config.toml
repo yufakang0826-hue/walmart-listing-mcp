@@ -1,4 +1,22 @@
+# Codex MCP server config snippet for walmart-listing-mcp.
+#
+# Where to put this: ~/.codex/config.toml (merge with your existing config).
+#
+# Before you paste:
+#   1. Replace <ABSOLUTE_PATH_TO_REPO> with the absolute path of this repo on
+#      your machine. Examples:
+#        Mac/Linux : /Users/yourname/walmart-listing-mcp
+#        Windows   : C:/Users/yourname/walmart-listing-mcp
+#   2. Replace <NODE_PATH> with the absolute path to your node binary, or
+#      just write "node" if it's on PATH. To find it:
+#        Mac/Linux : which node
+#        Windows   : where node
+#   3. Fill in WALMART_CLIENT_ID / WALMART_CLIENT_SECRET from
+#      https://developer.walmart.com/
+#   4. Keep WALMART_SANDBOX = "true" until you have run docs/PRODUCTION_VALIDATION.md
+#      against your sandbox account at least once. Production writes are real money.
+
 [mcp_servers.walmart_listing]
-command = "C:/nvm4w/nodejs/node.exe"
-args = ["C:/Users/Fakang/Desktop/乐好智能ERP/walmart listing MCP/dist/index.js"]
-env = { WALMART_CLIENT_ID = "your_client_id", WALMART_CLIENT_SECRET = "your_client_secret", WALMART_MARKETPLACE = "US", WALMART_SANDBOX = "false", WALMART_SELLER_PROFILE_STORE = "C:/Users/Fakang/Desktop/乐好智能ERP/walmart listing MCP/.walmart-seller-profiles.json" }
+command = "<NODE_PATH>"
+args = ["<ABSOLUTE_PATH_TO_REPO>/dist/index.js"]
+env = { WALMART_CLIENT_ID = "<YOUR_CLIENT_ID>", WALMART_CLIENT_SECRET = "<YOUR_CLIENT_SECRET>", WALMART_MARKETPLACE = "US", WALMART_SANDBOX = "true", WALMART_SELLER_PROFILE_STORE = "<ABSOLUTE_PATH_TO_REPO>/.walmart-seller-profiles.json" }
