@@ -33,6 +33,10 @@ The wildcard tool `walmart_invoke_listing_api` has been **removed**. Every opera
 
 If you need an endpoint not covered above, open an issue or a PR adding a dedicated tool — the design choice is "no escape hatch" so the LLM cannot be tricked into hitting an unintended endpoint.
 
+## Schema tightening in v0.2.2
+
+The `payload` field on `walmart_submit_feed`, `walmart_update_inventory`, and `walmart_update_price` was `z.any()` in v0.2.1 and earlier, which silently allowed `undefined` / `null` / arbitrary scalar inputs. v0.2.2 tightened the schema so the field must be an object (or a string for `submit_feed` XML feeds). **If you were calling these tools with `payload: null`, `payload: "some string"` for non-feed tools, or omitting `payload` entirely, the call will now be rejected at the MCP validation layer (JSON-RPC error `-32602`) before any HTTP request goes out.** Migration: pass a proper request body object.
+
 ## Setup
 
 1. Install dependencies:
@@ -145,3 +149,20 @@ Discovered empirically by `scripts/smoke-test-writes.mjs`. **None are tool bugs*
 ## Evaluation
 
 See [`evaluation/`](./evaluation/) for the mcp-builder Phase 4 evaluation suite (10 questions, target ≥ 8 / 10 pass).
+
+## Verification scripts
+
+See [`scripts/README.md`](./scripts/README.md) for the full menu. Quick reference:
+
+```bash
+npm run build
+
+# Structural tests, no credentials
+node scripts/smoke-test.mjs
+
+# Read-API tests against the live sandbox
+node scripts/smoke-test-api.mjs
+
+# Write-API tests (sandbox-only; creates feeds + calls retire)
+node scripts/smoke-test-writes.mjs
+```

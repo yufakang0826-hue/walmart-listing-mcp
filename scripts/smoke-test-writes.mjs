@@ -15,8 +15,23 @@
 //   3. Walmart-side validation rejection — empty / structurally invalid bodies
 //      that the API itself rejects with 400 / 404.
 
+import "dotenv/config";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+
+// SAFETY: this script creates submit_feed entries and calls retire_item.
+// Refuse to run anywhere except sandbox.
+if (process.env.WALMART_SANDBOX !== "true") {
+  console.error(
+    `Refusing to run: sandbox-only script. ` +
+    `Set WALMART_SANDBOX=true in .env (currently: ${process.env.WALMART_SANDBOX || "undefined"}).`,
+  );
+  process.exit(1);
+}
+
+// Match the JSON-RPC error code for "Invalid params" — stable across MCP
+// SDK message rewordings. See https://www.jsonrpc.org/specification#error_object
+const SCHEMA_ERR = /-32602/;
 
 const results = [];
 function record(name, ok, detail = "") {
@@ -75,13 +90,41 @@ try {
     );
   }
 
+  // XML string payload — exercises the string branch of payload's union type
+  const xmlSku = `smoke-xml-${Date.now()}`;
+  const xmlPayload = `<?xml version="1.0" encoding="UTF-8"?>
+<MPItemFeed xmlns="http://walmart.com/">
+  <MPItemFeedHeader>
+    <version>4.2</version>
+    <sellingChannel>marketplace</sellingChannel>
+    <locale>en</locale>
+  </MPItemFeedHeader>
+  <MPItem>
+    <Item>
+      <sku>${xmlSku}</sku>
+      <productName>Smoke Test XML Item</productName>
+    </Item>
+  </MPItem>
+</MPItemFeed>`;
+  const feedXml = await client.callTool({
+    name: "walmart_submit_feed",
+    arguments: { feedType: "MP_ITEM", payload: xmlPayload, contentType: "application/xml" },
+  });
+  record(
+    "submit_feed (XML string payload) accepted via union schema",
+    feedXml.isError !== true && typeof feedXml.structuredContent?.feedId === "string",
+    feedXml.isError === true
+      ? trim(feedXml.content?.[0]?.text, 160)
+      : `feedId=${feedXml.structuredContent?.feedId}`,
+  );
+
   // Schema-layer: missing payload should fail BEFORE any API call
   const feedNoPayload = await client.callTool({
     name: "walmart_submit_feed",
     arguments: { feedType: "MP_ITEM" },
   }).catch((err) => ({ isError: true, content: [{ type: "text", text: String(err) }] }));
   const feedNoPayloadIsSchemaErr = feedNoPayload.isError === true
-    && /validation error|invalid_type/i.test(feedNoPayload.content?.[0]?.text || "");
+    && SCHEMA_ERR.test(feedNoPayload.content?.[0]?.text || "");
   record(
     "submit_feed without payload rejected at schema layer (no API call)",
     feedNoPayloadIsSchemaErr,
@@ -122,7 +165,7 @@ try {
     arguments: { sku: "any" },
   }).catch((err) => ({ isError: true, content: [{ type: "text", text: String(err) }] }));
   const invNoPayloadIsSchemaErr = invNoPayload.isError === true
-    && /validation error|invalid_type/i.test(invNoPayload.content?.[0]?.text || "");
+    && SCHEMA_ERR.test(invNoPayload.content?.[0]?.text || "");
   record(
     "update_inventory without payload rejected at schema layer (no API call)",
     invNoPayloadIsSchemaErr,
@@ -167,7 +210,7 @@ try {
   }).catch((err) => ({ isError: true, content: [{ type: "text", text: String(err) }] }));
   record(
     "update_price without payload rejected at schema layer (no API call)",
-    priceNoPayload.isError === true && /validation error|invalid_type/i.test(priceNoPayload.content?.[0]?.text || ""),
+    priceNoPayload.isError === true && SCHEMA_ERR.test(priceNoPayload.content?.[0]?.text || ""),
     trim(priceNoPayload.content?.[0]?.text, 160),
   );
 
@@ -203,7 +246,7 @@ try {
   }).catch((err) => ({ isError: true, content: [{ type: "text", text: String(err) }] }));
   record(
     "retire_item without sku rejected at schema layer (no API call)",
-    retireNoSku.isError === true && /validation error|invalid_type/i.test(retireNoSku.content?.[0]?.text || ""),
+    retireNoSku.isError === true && SCHEMA_ERR.test(retireNoSku.content?.[0]?.text || ""),
     trim(retireNoSku.content?.[0]?.text, 160),
   );
 
