@@ -110,10 +110,15 @@ const sellerProfileShape = z
 
 const tokenStatusShape = z
   .object({
-    sellerProfileId: z.string().nullable().optional(),
-    hasCredentials: z.boolean().optional(),
-    isCached: z.boolean().optional(),
-    expiresAt: z.union([z.string(), z.number()]).nullable().optional(),
+    authenticated: z.boolean(),
+    hasClientCredentials: z.boolean(),
+    usingSellerProfileStore: z.boolean(),
+    sellerProfileId: z.string().nullable(),
+    sellerProfileLabel: z.string().nullable(),
+    activeSellerProfileId: z.string().nullable(),
+    marketplace: z.string(),
+    sandbox: z.boolean(),
+    availableSellerProfiles: z.array(z.string()),
   })
   .passthrough();
 
@@ -430,7 +435,7 @@ function registerListingTools(server: McpServer): void {
     z
       .object({
         feedType: z.string().optional().describe("Feed type, defaults to MP_ITEM."),
-        version: z.string().optional().describe("Taxonomy version, defaults to 5.0."),
+        version: z.string().optional().describe("Taxonomy version. Defaults to 4.2 (the version Walmart sandbox accepts; 5.0 returns 400 INVALID_REQUEST in current sandbox)."),
         sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
       })
       .strict(),
@@ -506,43 +511,6 @@ function registerListingTools(server: McpServer): void {
     async (input) =>
       withClient(input.sellerProfileId, async (client) => client.updateInventory(input.sku, input.payload)),
     WRITE_REMOTE_IDEMPOTENT,
-  );
-
-  registerTool(
-    server,
-    "walmart_get_price",
-    "Get Walmart price information for a single SKU.",
-    z
-      .object({
-        sku: z.string().describe("Seller SKU."),
-        sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
-      })
-      .strict(),
-    passthroughShape,
-    async (input) => withClient(input.sellerProfileId, async (client) => client.getPrice(input.sku)),
-    READ_REMOTE,
-  );
-
-  registerTool(
-    server,
-    "walmart_get_bulk_price",
-    "List Walmart price records across SKUs. Use limit/offset for pagination.",
-    z
-      .object({
-        limit: z.number().optional().describe("Optional page size."),
-        offset: z.number().optional().describe("Optional offset."),
-        sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
-      })
-      .strict(),
-    passthroughShape,
-    async (input) =>
-      withClient(input.sellerProfileId, async (client) =>
-        client.getBulkPrice({
-          limit: input.limit,
-          offset: input.offset,
-        }),
-      ),
-    READ_REMOTE,
   );
 
   registerTool(

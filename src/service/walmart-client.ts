@@ -420,7 +420,7 @@ export class WalmartClient {
     });
   }
 
-  async getTaxonomy(feedType = "MP_ITEM", version = "5.0"): Promise<unknown> {
+  async getTaxonomy(feedType = "MP_ITEM", version = "4.2"): Promise<unknown> {
     return this.request({ method: "GET", path: "/v3/utilities/taxonomy", params: { feedType, version } });
   }
 
@@ -450,14 +450,6 @@ export class WalmartClient {
 
   async updatePrice(payload: unknown): Promise<unknown> {
     return this.request({ method: "PUT", path: "/v3/price", body: payload });
-  }
-
-  async getPrice(sku: string): Promise<unknown> {
-    return this.request({ method: "GET", path: "/v3/price", params: { sku } });
-  }
-
-  async getBulkPrice(params?: QueryParams): Promise<unknown> {
-    return this.request({ method: "GET", path: "/v3/price", params });
   }
 
   getContext(): { sellerProfileId: string | null; marketplace: string; sandbox: boolean } {
