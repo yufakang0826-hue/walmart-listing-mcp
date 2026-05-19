@@ -115,6 +115,14 @@ Ready-to-edit examples:
 - `walmart_get_item_status` derives publication and lifecycle fields from the item lookup response for the requested SKU.
 - `walmart_get_taxonomy` defaults to `version=4.2` because Walmart sandbox returns 400 INVALID_REQUEST for `version=5.0` and `version=4.6`. Override only if Walmart support tells you to.
 
+### Sandbox quirks to be aware of before promoting to production
+
+Discovered empirically by `scripts/smoke-test-writes.mjs`. **None are tool bugs** — they are sandbox behavior you should plan around:
+
+- **`get_items` returns the sandbox-global catalog, not your seller-owned items.** All SKUs returned by `get_items` will 404 on `get_item` unless you own them. Use `submit_feed` to create your own items first if you want a full happy-path workflow.
+- **Write endpoints (`update_inventory`, `update_price`, `retire_item`) are mock-like in sandbox.** They return a success message for ANY SKU regardless of ownership. Production WILL return 4xx errors on unauthorized SKUs. Plan to re-verify these tools against production once with a SKU you own before relying on the error path in agent workflows.
+- **`submit_feed` always returns a `feedId`,** even for clearly invalid payloads. The feed's actual fate (success / error) only shows up later via `get_feed_status`. Always poll status before assuming success.
+
 ## Security
 
 **Credentials**
