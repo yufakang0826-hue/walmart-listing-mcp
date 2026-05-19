@@ -355,7 +355,7 @@ function registerListingTools(server: McpServer): void {
     z
       .object({
         feedType: z.string().describe("Feed type, for example MP_ITEM or price."),
-        payload: z.any().describe("Exact Walmart feed payload body (object for JSON, string for XML)."),
+        payload: z.union([z.record(z.unknown()), z.string()]).describe("Exact Walmart feed payload body. Object for JSON feeds; string for XML feeds. Required."),
         params: paramsSchema.describe("Optional extra query parameters such as feedVersion or locale."),
         contentType: z.string().optional().describe("Optional feed content type. Defaults to application/json, set to application/xml for XML feeds, application/zip for bulk feeds."),
         filename: z.string().optional().describe("Optional filename for the multipart upload. Defaults to feed.json/feed.xml/feed.zip based on contentType."),
@@ -503,7 +503,7 @@ function registerListingTools(server: McpServer): void {
     z
       .object({
         sku: z.string().describe("Seller SKU."),
-        payload: z.any().describe("Inventory request body."),
+        payload: z.record(z.unknown()).describe("Inventory request body. Must follow Walmart's /v3/inventory body shape. Required."),
         sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
       })
       .strict(),
@@ -519,7 +519,7 @@ function registerListingTools(server: McpServer): void {
     "Update Walmart price for a SKU. The payload should follow Walmart's /v3/price body shape.",
     z
       .object({
-        payload: z.any().describe("Price request body."),
+        payload: z.record(z.unknown()).describe("Price request body. Must follow Walmart's /v3/price body shape. Required."),
         sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
       })
       .strict(),
