@@ -3,11 +3,12 @@ import "dotenv/config";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { registerWalmartTools } from "./service/walmart-tools.js";
 
 function initServer(): McpServer {
   return new McpServer({
     name: "walmart-mcp-server",
-    version: "0.2.4",
+    version: "0.2.5",
   });
 }
 
@@ -15,7 +16,6 @@ async function main(): Promise<void> {
   console.error("Starting Walmart MCP Server...");
 
   const server = initServer();
-  const { registerWalmartTools } = await import("./service/walmart-tools.js");
   await registerWalmartTools(server);
 
   const transport = new StdioServerTransport();

@@ -14,30 +14,34 @@ type ToolAnnotations = {
 
 const paramsSchema = z.record(z.union([z.string(), z.number(), z.boolean()])).optional();
 
+interface ToolDefinition<TInput extends z.ZodObject<z.ZodRawShape>> {
+  name: string;
+  description: string;
+  annotations: ToolAnnotations;
+  inputSchema: TInput;
+  outputSchema: z.ZodObject<z.ZodRawShape>;
+  handler: (input: z.infer<TInput>) => Promise<unknown>;
+}
+
 function registerTool<TInput extends z.ZodObject<z.ZodRawShape>>(
   server: McpServer,
-  name: string,
-  description: string,
-  inputSchema: TInput,
-  outputSchema: z.ZodObject<z.ZodRawShape>,
-  handler: (input: z.infer<TInput>) => Promise<unknown>,
-  annotations: ToolAnnotations,
+  def: ToolDefinition<TInput>,
 ): void {
-  // Tell serializeSuccess whether the payload originated outside our trust
-  // boundary so it can wrap text content with the untrusted-input warning.
-  const source = annotations.openWorldHint ? "external" : "local";
+  const source = def.annotations.openWorldHint ? "external" : "local";
 
   server.registerTool(
-    name,
+    def.name,
     {
-      description,
-      inputSchema,
-      outputSchema,
-      annotations,
+      description: def.description,
+      inputSchema: def.inputSchema,
+      outputSchema: def.outputSchema,
+      annotations: def.annotations,
     },
+    // Cast bridges the SDK's ToolCallback (Args=unknown shape) with our
+    // z.infer<TInput> argument typing — behavior is unchanged.
     (async (input: z.infer<TInput>) => {
       try {
-        return serializeSuccess(await handler(input), source) as CallToolResult;
+        return serializeSuccess(await def.handler(input), source) as CallToolResult;
       } catch (error) {
         return serializeError(error) as CallToolResult;
       }
@@ -54,24 +58,33 @@ async function withClient<T>(
 }
 
 // Annotation presets — keep one source of truth so reviewers can audit
-// behavior hints at a glance.
+// behavior hints at a glance. Per MCP spec, destructiveHint / idempotentHint
+// are only meaningful when readOnlyHint is false, so the READ_* presets
+// omit them.
 const READ_LOCAL: ToolAnnotations = {
   readOnlyHint: true,
-  destructiveHint: false,
-  idempotentHint: true,
   openWorldHint: false,
 };
 
 const READ_REMOTE: ToolAnnotations = {
   readOnlyHint: true,
-  destructiveHint: false,
-  idempotentHint: true,
   openWorldHint: true,
 };
 
-const WRITE_LOCAL: ToolAnnotations = {
+// Local writes that overwrite existing state (e.g. upsert_seller_profile
+// can replace credentials of an existing profile).
+const WRITE_LOCAL_DESTRUCTIVE: ToolAnnotations = {
   readOnlyHint: false,
   destructiveHint: true,
+  idempotentHint: true,
+  openWorldHint: false,
+};
+
+// Local writes that only flip a flag / change selection (e.g.
+// set_active_seller_profile). Reversible, no data is lost.
+const WRITE_LOCAL_SAFE: ToolAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: false,
   idempotentHint: true,
   openWorldHint: false,
 };
@@ -156,17 +169,25 @@ const successShape = z
   })
   .passthrough();
 
+// Shared field schemas — used in many tools.
+const sellerProfileIdField = z
+  .string()
+  .optional()
+  .describe("Optional seller profile ID. If omitted, the active profile is used.");
+
+const skuField = z.string().describe("Seller SKU.");
+
 export async function registerWalmartTools(server: McpServer): Promise<void> {
   registerAuthTools(server);
   registerListingTools(server);
 }
 
 function registerAuthTools(server: McpServer): void {
-  registerTool(
-    server,
-    "walmart_upsert_seller_profile",
-    "Create or update a Walmart seller profile. Stores clientId, clientSecret, marketplace, channelType, consumerId, and svcEnv locally.",
-    z
+  registerTool(server, {
+    name: "walmart_upsert_seller_profile",
+    description: "Create or update a Walmart seller profile. Stores clientId, clientSecret, marketplace, channelType, consumerId, and svcEnv locally.",
+    annotations: WRITE_LOCAL_DESTRUCTIVE,
+    inputSchema: z
       .object({
         sellerProfileId: z.string().describe("Seller profile ID, for example walmart-us-main."),
         sellerProfileLabel: z.string().optional().describe("Optional human-readable label for the seller profile."),
@@ -179,8 +200,8 @@ function registerAuthTools(server: McpServer): void {
         setActive: z.boolean().default(true).describe("Whether to make this profile active immediately."),
       })
       .strict(),
-    sellerProfileShape,
-    async (input) =>
+    outputSchema: sellerProfileShape,
+    handler: async (input) =>
       authService.upsertSellerProfile({
         sellerProfileId: input.sellerProfileId,
         sellerProfileLabel: input.sellerProfileLabel,
@@ -192,95 +213,70 @@ function registerAuthTools(server: McpServer): void {
         svcEnv: input.svcEnv,
         setActive: input.setActive,
       }),
-    WRITE_LOCAL,
-  );
+  });
 
-  registerTool(
-    server,
-    "walmart_list_seller_profiles",
-    "List locally stored Walmart seller profiles and indicate which one is active.",
-    z.object({}).strict(),
-    z
-      .object({
-        sellerProfiles: z.array(sellerProfileShape),
-      })
-      .passthrough(),
-    async () => ({ sellerProfiles: authService.listSellerProfiles() }),
-    READ_LOCAL,
-  );
+  registerTool(server, {
+    name: "walmart_list_seller_profiles",
+    description: "List locally stored Walmart seller profiles and indicate which one is active.",
+    annotations: READ_LOCAL,
+    inputSchema: z.object({}).strict(),
+    outputSchema: z.object({ sellerProfiles: z.array(sellerProfileShape) }).passthrough(),
+    handler: async () => ({ sellerProfiles: authService.listSellerProfiles() }),
+  });
 
-  registerTool(
-    server,
-    "walmart_set_active_seller_profile",
-    "Set the active Walmart seller profile used by listing tools when sellerProfileId is omitted.",
-    z
-      .object({
-        sellerProfileId: z.string().describe("Seller profile ID to activate."),
-      })
+  registerTool(server, {
+    name: "walmart_set_active_seller_profile",
+    description: "Set the active Walmart seller profile used by listing tools when sellerProfileId is omitted.",
+    annotations: WRITE_LOCAL_SAFE,
+    inputSchema: z
+      .object({ sellerProfileId: z.string().describe("Seller profile ID to activate.") })
       .strict(),
-    z
-      .object({
-        success: z.boolean(),
-        activeSellerProfile: sellerProfileShape,
-      })
+    outputSchema: z
+      .object({ success: z.boolean(), activeSellerProfile: sellerProfileShape })
       .passthrough(),
-    async (input) => ({
+    handler: async (input) => ({
       success: true,
       activeSellerProfile: authService.setActiveSellerProfile(input.sellerProfileId),
     }),
-    WRITE_LOCAL,
-  );
+  });
 
-  registerTool(
-    server,
-    "walmart_get_token_status",
-    "Show the current Walmart authentication status used by this MCP server.",
-    z
-      .object({
-        sellerProfileId: z.string().optional().describe("Optional seller profile ID. If omitted, the active profile is used first."),
-      })
-      .strict(),
-    tokenStatusShape,
-    async (input) => authService.getTokenStatus(input.sellerProfileId),
-    READ_LOCAL,
-  );
+  registerTool(server, {
+    name: "walmart_get_token_status",
+    description: "Show the current Walmart authentication status used by this MCP server.",
+    annotations: READ_LOCAL,
+    inputSchema: z.object({ sellerProfileId: sellerProfileIdField }).strict(),
+    outputSchema: tokenStatusShape,
+    handler: async (input) => authService.getTokenStatus(input.sellerProfileId),
+  });
 
-  registerTool(
-    server,
-    "walmart_verify_credentials",
-    "Verify that the configured Walmart clientId and clientSecret can fetch an access token.",
-    z
-      .object({
-        sellerProfileId: z.string().optional().describe("Optional seller profile ID. If omitted, the active profile is used first."),
-      })
-      .strict(),
-    z
-      .object({
-        ok: z.boolean().optional(),
-        success: z.boolean().optional(),
-      })
+  registerTool(server, {
+    name: "walmart_verify_credentials",
+    description: "Verify that the configured Walmart clientId and clientSecret can fetch an access token.",
+    annotations: READ_REMOTE,
+    inputSchema: z.object({ sellerProfileId: sellerProfileIdField }).strict(),
+    outputSchema: z
+      .object({ ok: z.boolean().optional(), success: z.boolean().optional() })
       .passthrough(),
-    async (input) => authService.verifyCredentials(input.sellerProfileId),
-    READ_REMOTE,
-  );
+    handler: async (input) => authService.verifyCredentials(input.sellerProfileId),
+  });
 }
 
 function registerListingTools(server: McpServer): void {
-  registerTool(
-    server,
-    "walmart_get_items",
-    "List Walmart items for the active seller profile.",
-    z
+  registerTool(server, {
+    name: "walmart_get_items",
+    description: "List Walmart items for the active seller profile.",
+    annotations: READ_REMOTE,
+    inputSchema: z
       .object({
         limit: z.number().optional().describe("Optional page size."),
         offset: z.number().optional().describe("Optional offset."),
         sku: z.string().optional().describe("Optional SKU filter."),
         lifecycleStatus: z.string().optional().describe("Optional lifecycle status filter."),
-        sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
+        sellerProfileId: sellerProfileIdField,
       })
       .strict(),
-    walmartItemListShape,
-    async (input) =>
+    outputSchema: walmartItemListShape,
+    handler: async (input) =>
       withClient(input.sellerProfileId, async (client) =>
         client.getItems({
           limit: input.limit,
@@ -289,35 +285,23 @@ function registerListingTools(server: McpServer): void {
           lifecycleStatus: input.lifecycleStatus,
         }),
       ),
-    READ_REMOTE,
-  );
+  });
 
-  registerTool(
-    server,
-    "walmart_get_item",
-    "Get a single Walmart item by SKU.",
-    z
-      .object({
-        sku: z.string().describe("Seller SKU."),
-        sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
-      })
-      .strict(),
-    passthroughShape,
-    async (input) => withClient(input.sellerProfileId, async (client) => client.getItem(input.sku)),
-    READ_REMOTE,
-  );
+  registerTool(server, {
+    name: "walmart_get_item",
+    description: "Get a single Walmart item by SKU.",
+    annotations: READ_REMOTE,
+    inputSchema: z.object({ sku: skuField, sellerProfileId: sellerProfileIdField }).strict(),
+    outputSchema: passthroughShape,
+    handler: async (input) => withClient(input.sellerProfileId, async (client) => client.getItem(input.sku)),
+  });
 
-  registerTool(
-    server,
-    "walmart_get_item_status",
-    "Get Walmart item status fields by SKU using the item lookup response.",
-    z
-      .object({
-        sku: z.string().describe("Seller SKU."),
-        sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
-      })
-      .strict(),
-    z
+  registerTool(server, {
+    name: "walmart_get_item_status",
+    description: "Get Walmart item status fields by SKU using the item lookup response.",
+    annotations: READ_REMOTE,
+    inputSchema: z.object({ sku: skuField, sellerProfileId: sellerProfileIdField }).strict(),
+    outputSchema: z
       .object({
         sku: z.string().optional(),
         publishedStatus: z.string().optional(),
@@ -325,99 +309,80 @@ function registerListingTools(server: McpServer): void {
         availability: z.string().optional(),
       })
       .passthrough(),
-    async (input) => withClient(input.sellerProfileId, async (client) => client.getItemStatus(input.sku)),
-    READ_REMOTE,
-  );
+    handler: async (input) => withClient(input.sellerProfileId, async (client) => client.getItemStatus(input.sku)),
+  });
 
-  registerTool(
-    server,
-    "walmart_retire_item",
-    "Retire or delist a Walmart item by SKU.",
-    z
-      .object({
-        sku: z.string().describe("Seller SKU."),
-        sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
-      })
-      .strict(),
-    successShape,
-    async (input) =>
+  registerTool(server, {
+    name: "walmart_retire_item",
+    description: "Retire or delist a Walmart item by SKU.",
+    annotations: WRITE_REMOTE_IDEMPOTENT,
+    inputSchema: z.object({ sku: skuField, sellerProfileId: sellerProfileIdField }).strict(),
+    outputSchema: successShape,
+    handler: async (input) =>
       withClient(input.sellerProfileId, async (client) => ({
         success: true,
         result: await client.retireItem(input.sku),
       })),
-    WRITE_REMOTE_IDEMPOTENT,
-  );
+  });
 
-  registerTool(
-    server,
-    "walmart_submit_feed",
-    "Submit a Walmart feed for listing operations. Payload is uploaded as multipart/form-data (Walmart API requirement). Common feedType values include MP_ITEM and price.",
-    z
+  registerTool(server, {
+    name: "walmart_submit_feed",
+    description: "Submit a Walmart feed for listing operations. Payload is uploaded as multipart/form-data (Walmart API requirement). Common feedType values include MP_ITEM and price.",
+    // Each submission creates a new feed with a new feedId — not idempotent.
+    annotations: WRITE_REMOTE_NONIDEMPOTENT,
+    inputSchema: z
       .object({
         feedType: z.string().describe("Feed type, for example MP_ITEM or price."),
         payload: z.union([z.record(z.unknown()), z.string()]).describe("Exact Walmart feed payload body. Object for JSON feeds; string for XML feeds. Required."),
         params: paramsSchema.describe("Optional extra query parameters such as feedVersion or locale."),
         contentType: z.string().optional().describe("Optional feed content type. Defaults to application/json, set to application/xml for XML feeds, application/zip for bulk feeds."),
         filename: z.string().optional().describe("Optional filename for the multipart upload. Defaults to feed.json/feed.xml/feed.zip based on contentType."),
-        sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
+        sellerProfileId: sellerProfileIdField,
       })
       .strict(),
-    walmartFeedSubmitShape,
-    async (input) =>
-      withClient(input.sellerProfileId, async (client) => {
-        const feedOptions: { contentType?: string; filename?: string } = {};
-        if (typeof input.contentType === "string") feedOptions.contentType = input.contentType;
-        if (typeof input.filename === "string") feedOptions.filename = input.filename;
-        return client.submitFeed(
-          input.feedType,
-          input.payload,
-          input.params,
-          Object.keys(feedOptions).length > 0 ? feedOptions : undefined,
-        );
-      }),
-    // Each submission creates a new feed with a new feedId — not idempotent.
-    WRITE_REMOTE_NONIDEMPOTENT,
-  );
+    outputSchema: walmartFeedSubmitShape,
+    handler: async (input) =>
+      withClient(input.sellerProfileId, async (client) =>
+        client.submitFeed(input.feedType, input.payload, input.params, {
+          contentType: input.contentType,
+          filename: input.filename,
+        }),
+      ),
+  });
 
-  registerTool(
-    server,
-    "walmart_get_feed_status",
-    "Get Walmart feed processing status by feed ID.",
-    z
+  registerTool(server, {
+    name: "walmart_get_feed_status",
+    description: "Get Walmart feed processing status by feed ID.",
+    annotations: READ_REMOTE,
+    inputSchema: z
       .object({
         feedId: z.string().describe("Feed ID returned by Walmart."),
-        sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
+        sellerProfileId: sellerProfileIdField,
       })
       .strict(),
-    walmartFeedStatusShape,
-    async (input) => withClient(input.sellerProfileId, async (client) => client.getFeedStatus(input.feedId)),
-    READ_REMOTE,
-  );
+    outputSchema: walmartFeedStatusShape,
+    handler: async (input) => withClient(input.sellerProfileId, async (client) => client.getFeedStatus(input.feedId)),
+  });
 
-  registerTool(
-    server,
-    "walmart_get_feeds",
-    "List Walmart feeds for the active seller profile.",
-    z
+  registerTool(server, {
+    name: "walmart_get_feeds",
+    description: "List Walmart feeds for the active seller profile.",
+    annotations: READ_REMOTE,
+    inputSchema: z
       .object({
         feedType: z.string().optional().describe("Optional feed type filter."),
         limit: z.number().optional().describe("Optional page size."),
         offset: z.number().optional().describe("Optional offset."),
-        sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
+        sellerProfileId: sellerProfileIdField,
       })
       .strict(),
-    z
+    outputSchema: z
       .object({
-        results: z
-          .object({
-            feed: z.array(walmartFeedStatusShape).optional(),
-          })
-          .passthrough()
-          .optional(),
+        results: z.object({ feed: z.array(walmartFeedStatusShape).optional() }).passthrough().optional(),
         totalResults: z.number().optional(),
       })
       .passthrough(),
-    async (input) =>
+    handler: async (input) =>
       withClient(input.sellerProfileId, async (client) =>
         client.getFeeds({
           feedType: input.feedType,
@@ -425,106 +390,87 @@ function registerListingTools(server: McpServer): void {
           offset: input.offset,
         }),
       ),
-    READ_REMOTE,
-  );
+  });
 
-  registerTool(
-    server,
-    "walmart_get_taxonomy",
-    "Get Walmart taxonomy data for listing category work.",
-    z
+  registerTool(server, {
+    name: "walmart_get_taxonomy",
+    description: "Get Walmart taxonomy data for listing category work.",
+    annotations: READ_REMOTE,
+    inputSchema: z
       .object({
         feedType: z.string().optional().describe("Feed type, defaults to MP_ITEM."),
         version: z.string().optional().describe("Taxonomy version. Defaults to 4.2 (the version Walmart sandbox accepts; 5.0 returns 400 INVALID_REQUEST in current sandbox)."),
-        sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
+        sellerProfileId: sellerProfileIdField,
       })
       .strict(),
-    passthroughShape,
-    async (input) =>
+    outputSchema: passthroughShape,
+    handler: async (input) =>
       withClient(input.sellerProfileId, async (client) => client.getTaxonomy(input.feedType, input.version)),
-    READ_REMOTE,
-  );
+  });
 
-  registerTool(
-    server,
-    "walmart_get_departments",
-    "Get Walmart departments used for listing taxonomy navigation.",
-    z
-      .object({
-        sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
-      })
-      .strict(),
-    passthroughShape,
-    async (input) => withClient(input.sellerProfileId, async (client) => client.getDepartments()),
-    READ_REMOTE,
-  );
+  registerTool(server, {
+    name: "walmart_get_departments",
+    description: "Get Walmart departments used for listing taxonomy navigation.",
+    annotations: READ_REMOTE,
+    inputSchema: z.object({ sellerProfileId: sellerProfileIdField }).strict(),
+    outputSchema: passthroughShape,
+    handler: async (input) => withClient(input.sellerProfileId, async (client) => client.getDepartments()),
+  });
 
-  registerTool(
-    server,
-    "walmart_get_inventory",
-    "Get Walmart inventory for a single SKU.",
-    z
-      .object({
-        sku: z.string().describe("Seller SKU."),
-        sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
-      })
-      .strict(),
-    passthroughShape,
-    async (input) => withClient(input.sellerProfileId, async (client) => client.getInventory(input.sku)),
-    READ_REMOTE,
-  );
+  registerTool(server, {
+    name: "walmart_get_inventory",
+    description: "Get Walmart inventory for a single SKU.",
+    annotations: READ_REMOTE,
+    inputSchema: z.object({ sku: skuField, sellerProfileId: sellerProfileIdField }).strict(),
+    outputSchema: passthroughShape,
+    handler: async (input) => withClient(input.sellerProfileId, async (client) => client.getInventory(input.sku)),
+  });
 
-  registerTool(
-    server,
-    "walmart_get_bulk_inventory",
-    "List Walmart inventory records.",
-    z
+  registerTool(server, {
+    name: "walmart_get_bulk_inventory",
+    description: "List Walmart inventory records.",
+    annotations: READ_REMOTE,
+    inputSchema: z
       .object({
         limit: z.number().optional().describe("Optional page size."),
         offset: z.number().optional().describe("Optional offset."),
-        sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
+        sellerProfileId: sellerProfileIdField,
       })
       .strict(),
-    passthroughShape,
-    async (input) =>
+    outputSchema: passthroughShape,
+    handler: async (input) =>
       withClient(input.sellerProfileId, async (client) =>
-        client.getBulkInventory({
-          limit: input.limit,
-          offset: input.offset,
-        }),
+        client.getBulkInventory({ limit: input.limit, offset: input.offset }),
       ),
-    READ_REMOTE,
-  );
+  });
 
-  registerTool(
-    server,
-    "walmart_update_inventory",
-    "Update Walmart inventory for a SKU. The payload should follow Walmart's inventory body shape.",
-    z
+  registerTool(server, {
+    name: "walmart_update_inventory",
+    description: "Update Walmart inventory for a SKU. The payload should follow Walmart's inventory body shape.",
+    annotations: WRITE_REMOTE_IDEMPOTENT,
+    inputSchema: z
       .object({
-        sku: z.string().describe("Seller SKU."),
+        sku: skuField,
         payload: z.record(z.unknown()).describe("Inventory request body. Must follow Walmart's /v3/inventory body shape. Required."),
-        sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
+        sellerProfileId: sellerProfileIdField,
       })
       .strict(),
-    passthroughShape,
-    async (input) =>
+    outputSchema: passthroughShape,
+    handler: async (input) =>
       withClient(input.sellerProfileId, async (client) => client.updateInventory(input.sku, input.payload)),
-    WRITE_REMOTE_IDEMPOTENT,
-  );
+  });
 
-  registerTool(
-    server,
-    "walmart_update_price",
-    "Update Walmart price for a SKU. The payload should follow Walmart's /v3/price body shape.",
-    z
+  registerTool(server, {
+    name: "walmart_update_price",
+    description: "Update Walmart price for a SKU. The payload should follow Walmart's /v3/price body shape.",
+    annotations: WRITE_REMOTE_IDEMPOTENT,
+    inputSchema: z
       .object({
         payload: z.record(z.unknown()).describe("Price request body. Must follow Walmart's /v3/price body shape. Required."),
-        sellerProfileId: z.string().optional().describe("Optional seller profile ID."),
+        sellerProfileId: sellerProfileIdField,
       })
       .strict(),
-    passthroughShape,
-    async (input) => withClient(input.sellerProfileId, async (client) => client.updatePrice(input.payload)),
-    WRITE_REMOTE_IDEMPOTENT,
-  );
+    outputSchema: passthroughShape,
+    handler: async (input) => withClient(input.sellerProfileId, async (client) => client.updatePrice(input.payload)),
+  });
 }
