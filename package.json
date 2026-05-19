@@ -1,11 +1,19 @@
 {
   "name": "walmart-mcp-server",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Standalone MCP server for Walmart Marketplace and Walmart Connect seller workflows",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
     "walmart-mcp-server": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
   },
   "scripts": {
     "build": "tsc --project tsconfig.build.json",
@@ -14,7 +22,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
   },
   "keywords": [
     "mcp",
@@ -22,9 +31,19 @@
     "walmart",
     "marketplace",
     "walmart-connect",
-    "seller"
+    "seller",
+    "ecommerce"
   ],
+  "author": "yufakang0826-hue (https://github.com/yufakang0826-hue)",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yufakang0826-hue/walmart-listing-mcp.git"
+  },
+  "homepage": "https://github.com/yufakang0826-hue/walmart-listing-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/yufakang0826-hue/walmart-listing-mcp/issues"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.11.1",
     "dotenv": "^16.5.0",
