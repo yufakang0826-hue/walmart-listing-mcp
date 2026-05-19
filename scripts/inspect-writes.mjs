@@ -1,6 +1,17 @@
-// Dig into the suspicious "unexpectedly succeeded" responses
+// Dig into the suspicious "unexpectedly succeeded" responses.
+// Diagnostic tool: prints raw responses for write tools so you can see
+// exactly what sandbox returned.
+import "dotenv/config";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+
+if (process.env.WALMART_SANDBOX !== "true") {
+  console.error(
+    `Refusing to run: sandbox-only script (writes to Walmart). ` +
+    `Set WALMART_SANDBOX=true in .env (currently: ${process.env.WALMART_SANDBOX || "undefined"}).`,
+  );
+  process.exit(1);
+}
 
 const transport = new StdioClientTransport({ command: "node", args: ["dist/index.js"] });
 const client = new Client({ name: "inspect", version: "0.0.1" }, { capabilities: {} });
