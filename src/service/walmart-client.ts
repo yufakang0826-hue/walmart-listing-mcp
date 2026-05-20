@@ -381,6 +381,15 @@ export class WalmartClient {
     return this.request({ method: "GET", path: "/v3/items/catalog/search", params });
   }
 
+  async getListingQualityScore(params?: { viewTrendingItems?: boolean; wfsFlag?: string }): Promise<unknown> {
+    return this.request({
+      method: "GET",
+      path: "/v3/insights/items/listingQuality/score",
+      params: params as QueryParams,
+    });
+  }
+
+
   async retireItem(sku: string): Promise<unknown> {
     return this.request({ method: "DELETE", path: `/v3/items/${encodeURIComponent(sku)}` });
   }
