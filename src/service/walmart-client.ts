@@ -367,6 +367,20 @@ export class WalmartClient {
     return this.request({ method: "GET", path: `/v3/items/${encodeURIComponent(sku)}` });
   }
 
+  async searchWalmartCatalog(params: {
+    query?: string;
+    gtin?: string;
+    upc?: string;
+    asin?: string;
+    responseFormat?: "DEFAULT" | "SPEC";
+  }): Promise<unknown> {
+    return this.request({ method: "GET", path: "/v3/items/walmart/search", params });
+  }
+
+  async searchMyCatalog(params?: QueryParams): Promise<unknown> {
+    return this.request({ method: "GET", path: "/v3/items/catalog/search", params });
+  }
+
   async retireItem(sku: string): Promise<unknown> {
     return this.request({ method: "DELETE", path: `/v3/items/${encodeURIComponent(sku)}` });
   }
