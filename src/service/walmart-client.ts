@@ -385,7 +385,12 @@ export class WalmartClient {
     return this.request({ method: "POST", path: "/v3/items/catalog/search", body });
   }
 
-  async getListingQualityScore(params?: { viewTrendingItems?: boolean; wfsFlag?: string }): Promise<unknown> {
+  async getListingQualityScore(params?: {
+    viewTrendingItems?: boolean;
+    wfsFlag?: string;
+    sku?: string;
+    itemId?: string;
+  }): Promise<unknown> {
     return this.request({
       method: "GET",
       path: "/v3/insights/items/listingQuality/score",

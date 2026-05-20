@@ -352,11 +352,13 @@ function registerListingTools(server: McpServer): void {
 
   registerTool(server, {
     name: "walmart_get_listing_quality_score",
-    description: "Walmart Insights — listing quality scores. Sandbox response: { payload: { score, postPurchaseQuality, overAllQuality }, status }. This is the API equivalent of the Listing Quality and Pricing Insights dashboards in Seller Center.",
+    description: "Walmart Insights — listing quality scores. Omit sku/itemId to get the store-wide aggregate (score, postPurchaseQuality, overAllQuality across all SKUs). Pass sku OR itemId to scope the response to a single SKU's quality breakdown (content/pricing/shipping/rating/offer sub-scores).",
     annotations: READ_REMOTE,
     inputSchema: z
       .object({
-        viewTrendingItems: z.boolean().optional().describe("If true, focus on trending items only."),
+        sku: z.string().optional().describe("Seller SKU — scopes the response to a single SKU's quality breakdown."),
+        itemId: z.string().optional().describe("Walmart itemId — alternative to sku, scopes to a single item."),
+        viewTrendingItems: z.boolean().optional().describe("If true, focus on trending items only (store-wide mode)."),
         wfsFlag: z.string().optional().describe("Optional WFS (Walmart Fulfillment Services) filter."),
         sellerProfileId: sellerProfileIdField,
       })
@@ -370,6 +372,8 @@ function registerListingTools(server: McpServer): void {
     handler: async (input) =>
       withClient(input.sellerProfileId, async (client) =>
         client.getListingQualityScore({
+          sku: input.sku,
+          itemId: input.itemId,
           viewTrendingItems: input.viewTrendingItems,
           wfsFlag: input.wfsFlag,
         }),
@@ -425,6 +429,80 @@ function registerListingTools(server: McpServer): void {
       })
       .passthrough(),
     handler: async (input) => withClient(input.sellerProfileId, async (client) => client.getItemStatus(input.sku)),
+  });
+
+  registerTool(server, {
+    name: "walmart_get_complete_item",
+    description: "One-call composite: fetch the full picture of a SKU by orchestrating 4 API calls in parallel — get_item_status (publication state), get_inventory (quantity), get_listing_quality_score (per-SKU quality breakdown), and walmart_search_walmart_catalog by gtin (title/description/images/brand/price). Each sub-section reports its own status; partial failures do NOT fail the whole call. Use this instead of asking the LLM to chain 4 separate tool calls when you want a SKU's complete state.",
+    annotations: READ_REMOTE,
+    inputSchema: z.object({ sku: skuField, sellerProfileId: sellerProfileIdField }).strict(),
+    outputSchema: z
+      .object({
+        sku: z.string(),
+        item: z.object({ ok: z.boolean() }).passthrough().optional(),
+        inventory: z.object({ ok: z.boolean() }).passthrough().optional(),
+        qualityScore: z.object({ ok: z.boolean() }).passthrough().optional(),
+        catalogContent: z.object({ ok: z.boolean() }).passthrough().optional(),
+        notes: z.array(z.string()).optional(),
+      })
+      .passthrough(),
+    handler: async (input) =>
+      withClient(input.sellerProfileId, async (client) => {
+        const notes: string[] = [];
+
+        // Fan out 3 calls in parallel. get_item gives us both the seller-side
+        // metadata AND the gtin needed for the catalog content lookup, so we
+        // avoid calling get_item twice (vs. calling get_item_status first then
+        // get_item separately for the gtin).
+        const [itemR, inventoryR, qualityR] = await Promise.allSettled([
+          client.getItem(input.sku),
+          client.getInventory(input.sku),
+          client.getListingQualityScore({ sku: input.sku }),
+        ]);
+
+        let gtin: string | undefined;
+        if (itemR.status === "fulfilled") {
+          const ir = itemR.value as
+            | { ItemResponse?: Array<{ gtin?: string }> }
+            | undefined;
+          const first = ir?.ItemResponse?.[0];
+          if (first && typeof first.gtin === "string") gtin = first.gtin;
+          else notes.push("get_item returned but no gtin field — catalog content lookup skipped.");
+        } else {
+          notes.push(`get_item failed: ${itemR.reason instanceof Error ? itemR.reason.message : String(itemR.reason)}`);
+        }
+
+        let catalogR: PromiseSettledResult<unknown> | null = null;
+        if (gtin) {
+          catalogR = await Promise.allSettled([
+            client.searchWalmartCatalog({ gtin }),
+          ]).then((arr) => arr[0]);
+        }
+
+        function settled(r: PromiseSettledResult<unknown> | null): { ok: boolean } & Record<string, unknown> {
+          if (!r) return { ok: false, error: "skipped" };
+          if (r.status === "fulfilled") {
+            const v = r.value;
+            if (v && typeof v === "object" && !Array.isArray(v)) {
+              return { ok: true, ...(v as Record<string, unknown>) };
+            }
+            return { ok: true, value: v };
+          }
+          return {
+            ok: false,
+            error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+          };
+        }
+
+        return {
+          sku: input.sku,
+          item: settled(itemR),
+          inventory: settled(inventoryR),
+          qualityScore: settled(qualityR),
+          catalogContent: settled(catalogR),
+          ...(notes.length > 0 ? { notes } : {}),
+        };
+      }),
   });
 
   registerTool(server, {
