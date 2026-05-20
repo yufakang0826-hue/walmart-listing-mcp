@@ -377,8 +377,11 @@ export class WalmartClient {
     return this.request({ method: "GET", path: "/v3/items/walmart/search", params });
   }
 
-  async searchMyCatalog(params?: QueryParams): Promise<unknown> {
-    return this.request({ method: "GET", path: "/v3/items/catalog/search", params });
+  async searchMyCatalog(body: {
+    query: { field: string; values: string[] };
+    sort?: Array<{ field: string; order: "ASC" | "DESC" }>;
+  }): Promise<unknown> {
+    return this.request({ method: "POST", path: "/v3/items/catalog/search", body });
   }
 
   async getListingQualityScore(params?: { viewTrendingItems?: boolean; wfsFlag?: string }): Promise<unknown> {

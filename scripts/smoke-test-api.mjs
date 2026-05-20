@@ -79,6 +79,21 @@ try {
     r.record("walmart_get_item skipped — no SKU available", true);
   }
 
+  // search_my_catalog — v0.3.2 fix verified (was 405 with GET, now POST + body)
+  const myCatalog = await client.callTool({
+    name: "walmart_search_my_catalog",
+    arguments: { field: "sku", values: ["%"] },
+  });
+  const myCatalogOk = myCatalog.isError !== true;
+  const myCatalogItems = Array.isArray(myCatalog.structuredContent?.items) ? myCatalog.structuredContent.items : [];
+  r.record(
+    "walmart_search_my_catalog returns seller items",
+    myCatalogOk && myCatalogItems.length > 0,
+    myCatalogOk
+      ? `items=${myCatalogItems.length}, first sku=${myCatalogItems[0]?.sku || "n/a"}`
+      : trim(myCatalog.content?.[0]?.text, 200),
+  );
+
   // Listing quality / Insights — returns aggregate quality signals
   const quality = await client.callTool({
     name: "walmart_get_listing_quality_score",
