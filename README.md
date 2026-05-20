@@ -91,7 +91,15 @@ Ready-to-edit templates (replace `<ABSOLUTE_PATH_TO_REPO>` and `<NODE_PATH>`):
 - [`examples/codex-config.toml`](./examples/codex-config.toml)
 - [`examples/claude-settings.json`](./examples/claude-settings.json) — works for both Claude Desktop and Claude Code
 
-## Tools (21 total)
+## Known production issues (as of v0.3.3)
+
+Discovered through user dogfooding against a live production Walmart seller account. Sandbox does not reproduce these.
+
+- **`walmart_search_my_catalog` returns 400 in production** with `"Please provide at least one Valid Query/Filters"`. The same body shape that returns 20 items in sandbox is rejected by production. Walmart sandbox-vs-production divergence on this endpoint. **Workaround:** use `walmart_get_items` (supports `lifecycleStatus` filter) for now. The tool description includes a `filter` parameter you can experiment with if you have time to iterate.
+- **`walmart_get_departments` has been returning 520 SYSTEM_ERROR in production** for at least 24h as of v0.3.3 release. Walmart's `midas-data-api` backend is failing. Sandbox works fine. **Workaround:** use `walmart_get_taxonomy` — same category structure plus the full attribute schemas.
+- **`walmart_get_bulk_inventory` was removed in v0.3.3** because the underlying `/v3/inventory` endpoint requires a SKU parameter (no bulk list supported by Walmart). To enumerate inventory across your catalog, iterate over `walmart_get_items` and call `walmart_get_inventory({ sku })` per SKU.
+
+## Tools (20 total)
 
 **Auth / profile management (5)**
 - `walmart_upsert_seller_profile`
@@ -124,9 +132,8 @@ Ready-to-edit templates (replace `<ABSOLUTE_PATH_TO_REPO>` and `<NODE_PATH>`):
 - `walmart_get_taxonomy`
 - `walmart_get_departments`
 
-**Inventory (3)**
-- `walmart_get_inventory`
-- `walmart_get_bulk_inventory`
+**Inventory (2)**
+- `walmart_get_inventory` — per-SKU lookup (Walmart's /v3/inventory requires sku)
 - `walmart_update_inventory`
 
 **Price (1)**
