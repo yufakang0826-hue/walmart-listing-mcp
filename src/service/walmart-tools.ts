@@ -378,7 +378,7 @@ function registerListingTools(server: McpServer): void {
 
   registerTool(server, {
     name: "walmart_search_my_catalog",
-    description: "Search YOUR seller catalog by a single field. Uses POST /v3/items/catalog/search with body { query: { field, values }, sort? }. Returns up to 20 items as a flat array with fields like sku, gtin, wpid, lifecycleStatus, publishedStatus, inventoryStatus, productName, shelf, itemId, price.",
+    description: "Search YOUR seller catalog by a single field. Uses POST /v3/items/catalog/search with body { query: { field, values }, sort?, filter? }. Returns up to 20 items as a flat array with fields like sku, gtin, wpid, lifecycleStatus, publishedStatus, inventoryStatus, productName, shelf, itemId, price. KNOWN PRODUCTION ISSUE: this endpoint works against Walmart sandbox but production reports 400 'Please provide at least one Valid Query/Filters' for the same body shape — Walmart sandbox vs production divergence. If it fails in production, use walmart_get_items (which supports lifecycleStatus filter) instead.",
     annotations: READ_REMOTE,
     inputSchema: z
       .object({
@@ -393,6 +393,10 @@ function registerListingTools(server: McpServer): void {
           )
           .optional()
           .describe("Sort clauses, in priority order. Allowed fields: lifecycleStatus, publishedStatus, inventoryStatus, price."),
+        filter: z
+          .unknown()
+          .optional()
+          .describe("Optional filter clause. Exact shape is undocumented by Walmart and not validated by sandbox; passed through as-is to the API. Try variants like [{ field: 'lifecycleStatus', values: ['ACTIVE'] }] if the basic query fails in production."),
         sellerProfileId: sellerProfileIdField,
       })
       .strict(),
@@ -402,6 +406,7 @@ function registerListingTools(server: McpServer): void {
         client.searchMyCatalog({
           query: { field: input.field, values: input.values },
           sort: input.sort,
+          filter: input.filter,
         }),
       ),
   });
@@ -520,7 +525,7 @@ function registerListingTools(server: McpServer): void {
 
   registerTool(server, {
     name: "walmart_get_departments",
-    description: "Get Walmart departments used for listing taxonomy navigation.",
+    description: "Get Walmart departments used for listing taxonomy navigation. KNOWN PRODUCTION ISSUE: Walmart's midas-data-api backend has been returning 520 SYSTEM_ERROR for this endpoint in production for at least 24h as of v0.3.3. Sandbox works fine. If this 520s in production, use walmart_get_taxonomy as a workaround — it returns the same category structure plus attribute schemas.",
     annotations: READ_REMOTE,
     inputSchema: z.object({ sellerProfileId: sellerProfileIdField }).strict(),
     outputSchema: passthroughShape,
@@ -534,24 +539,6 @@ function registerListingTools(server: McpServer): void {
     inputSchema: z.object({ sku: skuField, sellerProfileId: sellerProfileIdField }).strict(),
     outputSchema: passthroughShape,
     handler: async (input) => withClient(input.sellerProfileId, async (client) => client.getInventory(input.sku)),
-  });
-
-  registerTool(server, {
-    name: "walmart_get_bulk_inventory",
-    description: "List Walmart inventory records.",
-    annotations: READ_REMOTE,
-    inputSchema: z
-      .object({
-        limit: z.number().optional().describe("Optional page size."),
-        offset: z.number().optional().describe("Optional offset."),
-        sellerProfileId: sellerProfileIdField,
-      })
-      .strict(),
-    outputSchema: passthroughShape,
-    handler: async (input) =>
-      withClient(input.sellerProfileId, async (client) =>
-        client.getBulkInventory({ limit: input.limit, offset: input.offset }),
-      ),
   });
 
   registerTool(server, {

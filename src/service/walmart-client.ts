@@ -379,6 +379,7 @@ export class WalmartClient {
 
   async searchMyCatalog(body: {
     query: { field: string; values: string[] };
+    filter?: unknown;
     sort?: Array<{ field: string; order: "ASC" | "DESC" }>;
   }): Promise<unknown> {
     return this.request({ method: "POST", path: "/v3/items/catalog/search", body });
@@ -468,10 +469,6 @@ export class WalmartClient {
 
   async updateInventory(sku: string, payload: unknown): Promise<unknown> {
     return this.request({ method: "PUT", path: "/v3/inventory", params: { sku }, body: payload });
-  }
-
-  async getBulkInventory(params?: QueryParams): Promise<unknown> {
-    return this.request({ method: "GET", path: "/v3/inventory", params });
   }
 
   async updatePrice(payload: unknown): Promise<unknown> {
