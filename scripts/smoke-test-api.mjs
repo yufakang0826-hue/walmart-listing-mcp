@@ -79,6 +79,23 @@ try {
     r.record("walmart_get_item skipped — no SKU available", true);
   }
 
+  // Walmart public catalog lookup by GTIN — should return real product content
+  const catalog = await client.callTool({
+    name: "walmart_search_walmart_catalog",
+    arguments: { gtin: "00193514013203" },
+  });
+  const catalogOk = catalog.isError !== true;
+  r.record(
+    "walmart_search_walmart_catalog (by gtin) returns product content",
+    catalogOk
+      && typeof catalog.structuredContent?.title === "string"
+      && typeof catalog.structuredContent?.description === "string"
+      && Array.isArray(catalog.structuredContent?.images),
+    catalogOk
+      ? `brand=${catalog.structuredContent?.brand}, images=${catalog.structuredContent?.images?.length}, descLen=${catalog.structuredContent?.description?.length}`
+      : trim(catalog.content?.[0]?.text, 160),
+  );
+
   const upsert = await client.callTool({
     name: "walmart_upsert_seller_profile",
     arguments: {

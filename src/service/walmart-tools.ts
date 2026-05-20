@@ -169,6 +169,33 @@ const successShape = z
   })
   .passthrough();
 
+// walmart_search_walmart_catalog response. Walmart returns two distinct
+// shapes:
+//   - Single match (gtin/upc/asin): the product record directly with keys
+//     itemId, title, brand, description (HTML), images (array of {url}),
+//     price ({amount, currency}), freeShipping, isMarketPlaceItem,
+//     offerCount, productType, properties (category attrs).
+//   - Multi match (keyword query): { items: [...] }, often empty in sandbox.
+// We use passthrough + permissive nested types because amount can come back
+// as either number or string depending on locale, and properties is a free-
+// form bag whose keys vary by category.
+const walmartCatalogItemShape = z
+  .object({
+    itemId: z.union([z.string(), z.number()]).optional(),
+    title: z.string().optional(),
+    brand: z.string().optional(),
+    description: z.string().optional(),
+    images: z.array(z.unknown()).optional(),
+    price: z.unknown().optional(),
+    freeShipping: z.boolean().optional(),
+    isMarketPlaceItem: z.boolean().optional(),
+    offerCount: z.union([z.string(), z.number()]).optional(),
+    productType: z.string().optional(),
+    properties: z.unknown().optional(),
+    items: z.array(z.unknown()).optional(),
+  })
+  .passthrough();
+
 // Shared field schemas — used in many tools.
 const sellerProfileIdField = z
   .string()
@@ -289,11 +316,67 @@ function registerListingTools(server: McpServer): void {
 
   registerTool(server, {
     name: "walmart_get_item",
-    description: "Get a single Walmart item by SKU.",
+    description: "Get a single Walmart item by SKU. Returns seller-side metadata (publishedStatus, lifecycleStatus, wpid, etc.) — NOT product content like description/images/brand. For product content use walmart_search_walmart_catalog.",
     annotations: READ_REMOTE,
     inputSchema: z.object({ sku: skuField, sellerProfileId: sellerProfileIdField }).strict(),
     outputSchema: passthroughShape,
     handler: async (input) => withClient(input.sellerProfileId, async (client) => client.getItem(input.sku)),
+  });
+
+  registerTool(server, {
+    name: "walmart_search_walmart_catalog",
+    description: "Search the Walmart PUBLIC catalog (not your seller catalog) for full product content — title, description, images, brand, price, properties. Provide at least one of query, gtin, upc, or asin. Use this when you need product details that walmart_get_item does not return (description, images, brand, attributes). Single-identifier lookups (gtin/upc/asin) return the product record directly; keyword queries return { items: [...] }.",
+    annotations: READ_REMOTE,
+    inputSchema: z
+      .object({
+        query: z.string().optional().describe("Keyword search, e.g. 'iPad Pro 11 inch'. Returns up to 20 items wrapped in { items: [...] }."),
+        gtin: z.string().optional().describe("Global Trade Item Number — 14-digit, e.g. '00193514013203'. Returns the product record directly."),
+        upc: z.string().optional().describe("Universal Product Code — typically 12-digit. Returns the product record directly."),
+        asin: z.string().optional().describe("Amazon Standard Identification Number. Returns the product record directly."),
+        responseFormat: z.enum(["DEFAULT", "SPEC"]).optional().describe("DEFAULT returns the product summary; SPEC returns the category attribute template needed to list a similar item."),
+        sellerProfileId: sellerProfileIdField,
+      })
+      .strict(),
+    outputSchema: walmartCatalogItemShape,
+    handler: async (input) =>
+      withClient(input.sellerProfileId, async (client) =>
+        client.searchWalmartCatalog({
+          query: input.query,
+          gtin: input.gtin,
+          upc: input.upc,
+          asin: input.asin,
+          responseFormat: input.responseFormat,
+        }),
+      ),
+  });
+
+  registerTool(server, {
+    name: "walmart_search_my_catalog",
+    description: "Search YOUR seller catalog with filters (lifecycleStatus, publishedStatus, inventoryStatus, etc.) and sorts. Returns up to 20 items matching the criteria. Different from walmart_get_items in that it supports full-text query and richer filtering.",
+    annotations: READ_REMOTE,
+    inputSchema: z
+      .object({
+        query: z.string().optional().describe("Keyword search across productName / sku / gtin / wpid / upc / isbn / ean / itemId. Use '%' for wildcard."),
+        lifecycleStatus: z.string().optional().describe("Filter: ACTIVE / RETIRED / etc."),
+        publishedStatus: z.string().optional().describe("Filter: PUBLISHED / UNPUBLISHED / etc."),
+        inventoryStatus: z.string().optional().describe("Filter: IN_STOCK / OUT_OF_STOCK / etc."),
+        limit: z.number().optional().describe("Page size, default 20."),
+        offset: z.number().optional().describe("Pagination offset."),
+        sellerProfileId: sellerProfileIdField,
+      })
+      .strict(),
+    outputSchema: passthroughShape,
+    handler: async (input) =>
+      withClient(input.sellerProfileId, async (client) =>
+        client.searchMyCatalog({
+          query: input.query,
+          lifecycleStatus: input.lifecycleStatus,
+          publishedStatus: input.publishedStatus,
+          inventoryStatus: input.inventoryStatus,
+          limit: input.limit,
+          offset: input.offset,
+        }),
+      ),
   });
 
   registerTool(server, {

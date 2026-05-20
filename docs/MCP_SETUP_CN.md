@@ -179,11 +179,15 @@ node scripts/smoke-test-api.mjs
 - `walmart_get_token_status`
 - `walmart_verify_credentials`
 
-### 商品
+### 商品（卖家侧元数据）
 - `walmart_get_items`
-- `walmart_get_item`
+- `walmart_get_item` —— 注意：只返发布状态（publishedStatus / wpid 等），**不返商品描述/图片/品牌**
 - `walmart_get_item_status`
 - `walmart_retire_item`
+
+### Walmart 公共目录（产品内容）—— v0.3.0 新增
+- `walmart_search_walmart_catalog` —— 按 query / gtin / upc / asin 查 Walmart 公共目录，返回 title / description (HTML) / images / brand / price / properties。专门补 `walmart_get_item` 拿不到的字段。
+- `walmart_search_my_catalog` —— 按 lifecycle / publish / inventory 状态过滤查您的卖家目录
 
 ### Feed
 - `walmart_submit_feed`
