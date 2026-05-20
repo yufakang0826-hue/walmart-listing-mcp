@@ -91,7 +91,7 @@ Ready-to-edit templates (replace `<ABSOLUTE_PATH_TO_REPO>` and `<NODE_PATH>`):
 - [`examples/codex-config.toml`](./examples/codex-config.toml)
 - [`examples/claude-settings.json`](./examples/claude-settings.json) — works for both Claude Desktop and Claude Code
 
-## Tools (20 total)
+## Tools (21 total)
 
 **Auth / profile management (5)**
 - `walmart_upsert_seller_profile`
@@ -109,6 +109,11 @@ Ready-to-edit templates (replace `<ABSOLUTE_PATH_TO_REPO>` and `<NODE_PATH>`):
 **Catalog — product content (2, new in v0.3.0)**
 - `walmart_search_walmart_catalog` — search the Walmart public catalog by query / gtin / upc / asin. Returns title, description (HTML), images, brand, price, properties — the fields `walmart_get_item` does NOT return.
 - `walmart_search_my_catalog` — filtered search of YOUR seller catalog (by lifecycle / publish / inventory status).
+
+**Insights — listing quality (1, new in v0.3.1)**
+- `walmart_get_listing_quality_score` — Walmart's listing quality + post-purchase quality signals. API equivalent of the Listing Quality / Pricing Insights dashboards in Seller Center.
+
+> **Known gaps (verified empirically):** Walmart's seller catalog API does NOT expose individual SKU-level `customerRating` or `numReviews` as direct fields — you can filter `walmart_search_my_catalog` by review-status but not read the numbers. Variant group relationships (`variantGroupId`) appear in `walmart_get_item` for SKUs you own; the sandbox catalog SKUs we don't own all 404, so this needs production verification. The Buy Box report endpoint requires a separate report-request pattern that isn't a direct GET — deferred until a real need surfaces.
 
 **Feeds (3)**
 - `walmart_submit_feed`

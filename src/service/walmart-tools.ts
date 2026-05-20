@@ -351,6 +351,32 @@ function registerListingTools(server: McpServer): void {
   });
 
   registerTool(server, {
+    name: "walmart_get_listing_quality_score",
+    description: "Walmart Insights — listing quality scores. Sandbox response: { payload: { score, postPurchaseQuality, overAllQuality }, status }. This is the API equivalent of the Listing Quality and Pricing Insights dashboards in Seller Center.",
+    annotations: READ_REMOTE,
+    inputSchema: z
+      .object({
+        viewTrendingItems: z.boolean().optional().describe("If true, focus on trending items only."),
+        wfsFlag: z.string().optional().describe("Optional WFS (Walmart Fulfillment Services) filter."),
+        sellerProfileId: sellerProfileIdField,
+      })
+      .strict(),
+    outputSchema: z
+      .object({
+        status: z.string().optional(),
+        payload: z.unknown().optional(),
+      })
+      .passthrough(),
+    handler: async (input) =>
+      withClient(input.sellerProfileId, async (client) =>
+        client.getListingQualityScore({
+          viewTrendingItems: input.viewTrendingItems,
+          wfsFlag: input.wfsFlag,
+        }),
+      ),
+  });
+
+  registerTool(server, {
     name: "walmart_search_my_catalog",
     description: "Search YOUR seller catalog with filters (lifecycleStatus, publishedStatus, inventoryStatus, etc.) and sorts. Returns up to 20 items matching the criteria. Different from walmart_get_items in that it supports full-text query and richer filtering.",
     annotations: READ_REMOTE,
