@@ -122,6 +122,22 @@ try {
       : trim(catalog.content?.[0]?.text, 160),
   );
 
+  // Composite: get_complete_item — orchestrates 4 calls + handles partial failures
+  const complete = await client.callTool({
+    name: "walmart_get_complete_item",
+    arguments: { sku: "5212572" },
+  });
+  const sections = complete.structuredContent || {};
+  r.record(
+    "walmart_get_complete_item returns 4 sections",
+    complete.isError !== true
+      && typeof sections.item?.ok === "boolean"
+      && typeof sections.inventory?.ok === "boolean"
+      && typeof sections.qualityScore?.ok === "boolean"
+      && typeof sections.catalogContent?.ok === "boolean",
+    `item=${sections.item?.ok}, inventory=${sections.inventory?.ok}, qualityScore=${sections.qualityScore?.ok}, catalogContent=${sections.catalogContent?.ok}`,
+  );
+
   const upsert = await client.callTool({
     name: "walmart_upsert_seller_profile",
     arguments: {

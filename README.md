@@ -99,7 +99,7 @@ Discovered through user dogfooding against a live production Walmart seller acco
 - **`walmart_get_departments` has been returning 520 SYSTEM_ERROR in production** for at least 24h as of v0.3.3 release. Walmart's `midas-data-api` backend is failing. Sandbox works fine. **Workaround:** use `walmart_get_taxonomy` — same category structure plus the full attribute schemas.
 - **`walmart_get_bulk_inventory` was removed in v0.3.3** because the underlying `/v3/inventory` endpoint requires a SKU parameter (no bulk list supported by Walmart). To enumerate inventory across your catalog, iterate over `walmart_get_items` and call `walmart_get_inventory({ sku })` per SKU.
 
-## Tools (20 total)
+## Tools (21 total)
 
 **Auth / profile management (5)**
 - `walmart_upsert_seller_profile`
@@ -108,18 +108,19 @@ Discovered through user dogfooding against a live production Walmart seller acco
 - `walmart_get_token_status`
 - `walmart_verify_credentials`
 
-**Items — seller catalog (4)**
+**Items — seller catalog (5)**
 - `walmart_get_items` — list your own items
 - `walmart_get_item` — your seller-side metadata for a SKU (publishedStatus, wpid, etc.)
 - `walmart_get_item_status` — derived status fields
+- `walmart_get_complete_item` (v0.4.0) — composite: 4 parallel calls (item / inventory / per-SKU quality / Walmart catalog content) → full SKU picture in one tool call. Partial failures don't fail the call; each section reports its own `ok` flag.
 - `walmart_retire_item` — delist a SKU
 
 **Catalog — product content (2, new in v0.3.0)**
 - `walmart_search_walmart_catalog` — search the Walmart public catalog by query / gtin / upc / asin. Returns title, description (HTML), images, brand, price, properties — the fields `walmart_get_item` does NOT return.
 - `walmart_search_my_catalog` — filtered search of YOUR seller catalog (by lifecycle / publish / inventory status).
 
-**Insights — listing quality (1, new in v0.3.1)**
-- `walmart_get_listing_quality_score` — Walmart's listing quality + post-purchase quality signals. API equivalent of the Listing Quality / Pricing Insights dashboards in Seller Center.
+**Insights — listing quality (1, new in v0.3.1; per-SKU mode in v0.4.0)**
+- `walmart_get_listing_quality_score` — Walmart's listing quality scores. Omit `sku`/`itemId` for store-wide aggregate (shipping/rating/offer/content/price/transactibility sub-scores). Pass `sku` or `itemId` to scope to a single SKU's breakdown.
 
 > **Known gaps (verified empirically):** Walmart's seller catalog API does NOT expose individual SKU-level `customerRating` or `numReviews` as direct fields — you can filter `walmart_search_my_catalog` by review-status but not read the numbers. Variant group relationships (`variantGroupId`) appear in `walmart_get_item` for SKUs you own; the sandbox catalog SKUs we don't own all 404, so this needs production verification. The Buy Box report endpoint requires a separate report-request pattern that isn't a direct GET — deferred until a real need surfaces.
 
