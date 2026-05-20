@@ -378,16 +378,21 @@ function registerListingTools(server: McpServer): void {
 
   registerTool(server, {
     name: "walmart_search_my_catalog",
-    description: "Search YOUR seller catalog with filters (lifecycleStatus, publishedStatus, inventoryStatus, etc.) and sorts. Returns up to 20 items matching the criteria. Different from walmart_get_items in that it supports full-text query and richer filtering.",
+    description: "Search YOUR seller catalog by a single field. Uses POST /v3/items/catalog/search with body { query: { field, values }, sort? }. Returns up to 20 items as a flat array with fields like sku, gtin, wpid, lifecycleStatus, publishedStatus, inventoryStatus, productName, shelf, itemId, price.",
     annotations: READ_REMOTE,
     inputSchema: z
       .object({
-        query: z.string().optional().describe("Keyword search across productName / sku / gtin / wpid / upc / isbn / ean / itemId. Use '%' for wildcard."),
-        lifecycleStatus: z.string().optional().describe("Filter: ACTIVE / RETIRED / etc."),
-        publishedStatus: z.string().optional().describe("Filter: PUBLISHED / UNPUBLISHED / etc."),
-        inventoryStatus: z.string().optional().describe("Filter: IN_STOCK / OUT_OF_STOCK / etc."),
-        limit: z.number().optional().describe("Page size, default 20."),
-        offset: z.number().optional().describe("Pagination offset."),
+        field: z.enum(["productName", "sku", "gtin", "upc", "wpid", "itemId"]).describe("The field to search against. Walmart sandbox accepts only these field names."),
+        values: z.array(z.string()).min(1).describe("Search values. Use ['%'] to match all (e.g. when only filtering/sorting). Use literal values for exact match — e.g. ['ZTGY-058'] when field='sku'."),
+        sort: z
+          .array(
+            z.object({
+              field: z.enum(["lifecycleStatus", "publishedStatus", "inventoryStatus", "price"]),
+              order: z.enum(["ASC", "DESC"]),
+            }),
+          )
+          .optional()
+          .describe("Sort clauses, in priority order. Allowed fields: lifecycleStatus, publishedStatus, inventoryStatus, price."),
         sellerProfileId: sellerProfileIdField,
       })
       .strict(),
@@ -395,12 +400,8 @@ function registerListingTools(server: McpServer): void {
     handler: async (input) =>
       withClient(input.sellerProfileId, async (client) =>
         client.searchMyCatalog({
-          query: input.query,
-          lifecycleStatus: input.lifecycleStatus,
-          publishedStatus: input.publishedStatus,
-          inventoryStatus: input.inventoryStatus,
-          limit: input.limit,
-          offset: input.offset,
+          query: { field: input.field, values: input.values },
+          sort: input.sort,
         }),
       ),
   });
