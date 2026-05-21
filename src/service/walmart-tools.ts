@@ -291,14 +291,15 @@ function registerAuthTools(server: McpServer): void {
 function registerListingTools(server: McpServer): void {
   registerTool(server, {
     name: "walmart_get_items",
-    description: "List Walmart items for the active seller profile.",
+    description: "List Walmart items for the active seller profile. PAGINATION: Walmart uses CURSOR-based pagination, not offset. Call once with no cursor to get the first page + response.nextCursor; then call again with nextCursor set to the previous response's value to advance. Repeat until nextCursor is null/empty. NEVER fan out parallel calls with different offset values — production has been observed to return duplicate SKUs across offset pages because the offset boundary is not strict. For a full-store walk: iterate sequentially with nextCursor, dedupe by sku as a safety net, and process per-page rather than buffering everything into agent context.",
     annotations: READ_REMOTE,
     inputSchema: z
       .object({
-        limit: z.number().optional().describe("Optional page size."),
-        offset: z.number().optional().describe("Optional offset."),
+        limit: z.number().optional().describe("Optional page size hint. Walmart may return fewer or more; the actual count is in the response."),
+        nextCursor: z.string().optional().describe("Pagination cursor from a previous response's nextCursor field. Omit on first call. Use this — NOT offset — to walk multiple pages."),
+        offset: z.number().optional().describe("DEPRECATED — Walmart's offset is not strict and parallel calls with different offsets cause overlapping/duplicate SKUs in production. Use nextCursor instead. Kept for backward compat only."),
         sku: z.string().optional().describe("Optional SKU filter."),
-        lifecycleStatus: z.string().optional().describe("Optional lifecycle status filter."),
+        lifecycleStatus: z.string().optional().describe("Optional lifecycle status filter (ACTIVE / RETIRED / etc.)."),
         sellerProfileId: sellerProfileIdField,
       })
       .strict(),
@@ -307,6 +308,7 @@ function registerListingTools(server: McpServer): void {
       withClient(input.sellerProfileId, async (client) =>
         client.getItems({
           limit: input.limit,
+          nextCursor: input.nextCursor,
           offset: input.offset,
           sku: input.sku,
           lifecycleStatus: input.lifecycleStatus,

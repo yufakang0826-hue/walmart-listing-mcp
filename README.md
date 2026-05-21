@@ -98,6 +98,7 @@ Discovered through user dogfooding against a live production Walmart seller acco
 - **`walmart_search_my_catalog` returns 400 in production** with `"Please provide at least one Valid Query/Filters"`. The same body shape that returns 20 items in sandbox is rejected by production. Walmart sandbox-vs-production divergence on this endpoint. **Workaround:** use `walmart_get_items` (supports `lifecycleStatus` filter) for now. The tool description includes a `filter` parameter you can experiment with if you have time to iterate.
 - **`walmart_get_departments` has been returning 520 SYSTEM_ERROR in production** for at least 24h as of v0.3.3 release. Walmart's `midas-data-api` backend is failing. Sandbox works fine. **Workaround:** use `walmart_get_taxonomy` — same category structure plus the full attribute schemas.
 - **`walmart_get_bulk_inventory` was removed in v0.3.3** because the underlying `/v3/inventory` endpoint requires a SKU parameter (no bulk list supported by Walmart). To enumerate inventory across your catalog, iterate over `walmart_get_items` and call `walmart_get_inventory({ sku })` per SKU.
+- **`walmart_get_items` is cursor-paginated, not offset-paginated.** Production exhibits duplicate SKUs across offset pages when called in parallel (observed in 815-SKU store audit). v0.4.1 makes the tool description explicit: iterate sequentially using `response.nextCursor`, never fan out parallel offset calls. The `offset` input is kept for backward compat but marked deprecated.
 
 ## Tools (21 total)
 
