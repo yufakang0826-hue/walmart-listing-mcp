@@ -21,13 +21,13 @@
   <!-- Q1: STATE-INDEPENDENT — total tool count -->
   <qa_pair>
     <question>How many tools total does this MCP server expose? Reply with the number only.</question>
-    <answer>21</answer>
+    <answer>22</answer>
   </qa_pair>
 
   <!-- Q2: STATE-INDEPENDENT — walmart_get_ prefix inventory -->
   <qa_pair>
     <question>List every tool name this MCP server exposes that starts with the prefix "walmart_get_". Reply with a comma-separated, alphabetically sorted list and nothing else.</question>
-    <answer>walmart_get_complete_item,walmart_get_departments,walmart_get_feed_status,walmart_get_feeds,walmart_get_inventory,walmart_get_item,walmart_get_item_status,walmart_get_items,walmart_get_listing_quality_score,walmart_get_taxonomy,walmart_get_token_status</answer>
+    <answer>walmart_get_complete_item,walmart_get_departments,walmart_get_feed_status,walmart_get_feeds,walmart_get_inventory,walmart_get_item,walmart_get_item_status,walmart_get_items,walmart_get_listing_quality_score,walmart_get_taxonomy,walmart_get_token_status,walmart_get_unpublished_counts</answer>
   </qa_pair>
 
   <!-- Q3: STATE-INDEPENDENT — no wildcard tool (post-0.2.0) -->

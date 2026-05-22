@@ -613,6 +613,15 @@ function registerListingTools(server: McpServer): void {
   });
 
   registerTool(server, {
+    name: "walmart_get_unpublished_counts",
+    description: "Get aggregate counts of unpublished items in your Walmart catalog, broken down by reason (no shipping info, no primary image, etc.). Lightweight alternative to scanning every SKU's unpublishedReasons field. KNOWN PRODUCTION ISSUE (verified 2026-05-22): Walmart's aurora unpublished-item-service backend is currently returning HTTP 500 (proxied as 502) for this endpoint. Sandbox does not expose this endpoint at all (404). Until Walmart fixes the backend, fall back to walmart_get_items + client-side aggregation of unpublishedReasons across the result set, or use scripts/audit-store.mjs which already surfaces unpublishedReasons per SKU.",
+    annotations: READ_REMOTE,
+    inputSchema: z.object({ sellerProfileId: sellerProfileIdField }).strict(),
+    outputSchema: passthroughShape,
+    handler: async (input) => withClient(input.sellerProfileId, async (client) => client.getUnpublishedItemsCounts()),
+  });
+
+  registerTool(server, {
     name: "walmart_get_inventory",
     description: "Get current inventory quantity for a single SKU (default ship node). Returns { sku, quantity: { amount, unit } }. Walmart's /v3/inventory endpoint requires sku — there is NO bulk-list endpoint, so to enumerate all inventory you must iterate via walmart_get_items + per-SKU walmart_get_inventory. For large catalogs, use scripts/audit-store.mjs --with-inventory.",
     annotations: READ_REMOTE,
