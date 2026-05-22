@@ -8,78 +8,73 @@
     - COMPLEX (each requires multiple tool calls or careful exploration)
     - STABLE (answer does not depend on time, ordering, or unrelated data)
 
-  Answers marked SANDBOX-SPECIFIC must be replaced with values from your own
-  sandbox seller account before running. State-independent answers (tool
-  inventory, strict-schema rejection, annotation hints) need no customization.
+  Categories:
+    - STATE-INDEPENDENT (Q1-Q6): answers derived from tool schemas + behavior only,
+      no sandbox setup needed.
+    - SANDBOX-SPECIFIC (Q7-Q10): require a configured sandbox seller profile.
+      Adjust answers to match your sandbox state before running.
 
   See evaluation/README.md for how to run with the mcp-builder harness.
 -->
 <evaluation>
 
-  <!-- STATE-INDEPENDENT: tool inventory -->
-  <qa_pair>
-    <question>List every tool name this MCP server exposes that starts with the prefix "walmart_get_". Reply with a comma-separated, alphabetically sorted list and nothing else.</question>
-    <answer>walmart_get_bulk_inventory,walmart_get_departments,walmart_get_feed_status,walmart_get_feeds,walmart_get_inventory,walmart_get_item,walmart_get_item_status,walmart_get_items,walmart_get_taxonomy,walmart_get_token_status</answer>
-  </qa_pair>
-
-  <!-- STATE-INDEPENDENT: total tool count -->
+  <!-- Q1: STATE-INDEPENDENT — total tool count -->
   <qa_pair>
     <question>How many tools total does this MCP server expose? Reply with the number only.</question>
-    <answer>18</answer>
+    <answer>21</answer>
   </qa_pair>
 
-  <!-- STATE-INDEPENDENT: no wildcard tool (post-0.2.0) -->
+  <!-- Q2: STATE-INDEPENDENT — walmart_get_ prefix inventory -->
+  <qa_pair>
+    <question>List every tool name this MCP server exposes that starts with the prefix "walmart_get_". Reply with a comma-separated, alphabetically sorted list and nothing else.</question>
+    <answer>walmart_get_complete_item,walmart_get_departments,walmart_get_feed_status,walmart_get_feeds,walmart_get_inventory,walmart_get_item,walmart_get_item_status,walmart_get_items,walmart_get_listing_quality_score,walmart_get_taxonomy,walmart_get_token_status</answer>
+  </qa_pair>
+
+  <!-- Q3: STATE-INDEPENDENT — no wildcard tool (post-0.2.0) -->
   <qa_pair>
     <question>Does this MCP server expose a wildcard tool that accepts arbitrary HTTP method and path (such as walmart_invoke_listing_api, walmart_invoke_api, or walmart_raw_request)? Reply "yes" or "no".</question>
     <answer>no</answer>
   </qa_pair>
 
-  <!-- STATE-INDEPENDENT: strict schema rejects unknown fields -->
+  <!-- Q4: STATE-INDEPENDENT — strict schema rejects unknown fields -->
   <qa_pair>
     <question>Call walmart_get_items with an extra unrecognized parameter named "nonExistentField" set to true. Does the server reject the call before contacting Walmart? Reply "yes" or "no".</question>
     <answer>yes</answer>
   </qa_pair>
 
-  <!-- STATE-INDEPENDENT: tool annotations -->
+  <!-- Q5: STATE-INDEPENDENT — annotations on a destructive write -->
   <qa_pair>
     <question>The walmart_retire_item tool is marked with three specific boolean annotations among readOnlyHint, destructiveHint, idempotentHint, openWorldHint that are set to true. List the names of the annotations that are set to true, comma-separated and alphabetically sorted. Reply with the list only, no other text.</question>
     <answer>destructiveHint,idempotentHint,openWorldHint</answer>
   </qa_pair>
 
-  <!-- SANDBOX-SPECIFIC: seller profile management
-       Setup: ensure exactly one seller profile is configured with sellerProfileId="walmart-us-main"
-       Replace the answer below if you use a different profile id. -->
+  <!-- Q6: STATE-INDEPENDENT — composite tool identification -->
+  <qa_pair>
+    <question>This MCP server has one composite tool that orchestrates multiple Walmart API calls in parallel (it returns item metadata, inventory, listing quality score, and public catalog content for a single SKU). Reply with only the exact tool name.</question>
+    <answer>walmart_get_complete_item</answer>
+  </qa_pair>
+
+  <!-- Q7: SANDBOX-SPECIFIC — seller profile management -->
   <qa_pair>
     <question>Call walmart_list_seller_profiles. Of the profiles returned, identify which one is currently the active profile and reply with only its sellerProfileId.</question>
     <answer>walmart-us-main</answer>
   </qa_pair>
 
-  <!-- SANDBOX-SPECIFIC: token status flow -->
+  <!-- Q8: SANDBOX-SPECIFIC — token status / credential health -->
   <qa_pair>
     <question>Call walmart_get_token_status for the active seller profile (omit sellerProfileId). Does the response indicate that credentials (clientId and clientSecret) are configured? Reply "yes" or "no".</question>
     <answer>yes</answer>
   </qa_pair>
 
-  <!-- SANDBOX-SPECIFIC: item listing pagination
-       Setup: have at least 2 items published to sandbox.
-       Replace expected publishedStatus with what's actually in your sandbox. -->
+  <!-- Q9: SANDBOX-SPECIFIC — cursor pagination behavior (NEW in v0.4.1) -->
   <qa_pair>
-    <question>Use walmart_get_items with limit=2 to fetch the first page. Pick the first SKU returned and call walmart_get_item with that SKU. Reply with the value of the publishedStatus field from the get_item response, exactly as returned.</question>
-    <answer>PUBLISHED</answer>
+    <question>Call walmart_get_items with limit=2 (do not pass offset or nextCursor — get the first page). Inspect the response. Does it include a field named "nextCursor" at the top level that you would pass back to walmart_get_items to fetch the second page? Reply "yes" or "no".</question>
+    <answer>yes</answer>
   </qa_pair>
 
-  <!-- SANDBOX-SPECIFIC: feed history
-       Setup: submit at least one MP_ITEM feed to sandbox before running.
-       Replace expected status with what your most recent feed is in. -->
+  <!-- Q10: SANDBOX-SPECIFIC — cross-tool composition -->
   <qa_pair>
-    <question>Call walmart_get_feeds with feedType="MP_ITEM" and limit=1 to get the most recent MP_ITEM feed. Then call walmart_get_feed_status with that feedId. Reply with only the value of the feedStatus field, in uppercase.</question>
-    <answer>PROCESSED</answer>
-  </qa_pair>
-
-  <!-- SANDBOX-SPECIFIC: cross-tool composition
-       Setup: ensure your sandbox has at least one item; the answer is its publishedStatus. -->
-  <qa_pair>
-    <question>Use walmart_get_items with limit=1 to identify any SKU. Then call walmart_get_item with that SKU to inspect its full record. Reply with only the publishedStatus value from the get_item response.</question>
+    <question>Use walmart_get_items with limit=1 to identify a SKU. Then call walmart_get_item with that SKU to inspect its full record. Reply with only the publishedStatus value from the get_item response, exactly as returned (uppercase).</question>
     <answer>PUBLISHED</answer>
   </qa_pair>
 

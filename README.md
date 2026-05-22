@@ -33,6 +33,18 @@ The wildcard tool `walmart_invoke_listing_api` has been **removed**. Every opera
 
 If you need an endpoint not covered above, open an issue or a PR adding a dedicated tool — the design choice is "no escape hatch" so the LLM cannot be tricked into hitting an unintended endpoint.
 
+## What's new in v0.5.0
+
+**Orchestration layer — no new tools, much sharper LLM experience.** The 21 existing tools cover Walmart's full listing surface; this release polishes how an LLM uses them.
+
+- **Tool descriptions standardized to a 3-part format** — *what it does / how to call it / known limitations or related tools*. Improves tool selection accuracy when the model is reasoning under many-tool context.
+- **`scripts/audit-store.mjs`** — full-store ETL that paginates via `nextCursor` (no offset duplication), fetches per-SKU listing quality scores at configurable concurrency, and writes CSV/JSON. Solves the 815-SKU context blowup pain: the LLM only sees a summary, not the raw rows. Optional `--with-inventory` / `--with-content` enrich.
+- **`scripts/probe-prod-endpoints.mjs`** — read-only probe of 10 endpoints that 404 in sandbox. Run with production credentials to discover what actually exists upstream before we ship typed tools in v0.5.1.
+- **Three Claude Code skills** in `.claude/skills/` — `walmart-audit-store` (decision rule for chat vs script), `walmart-diagnose-sku` (signal→diagnosis table), `walmart-list-via-feed` (canonical feed-based write workflow, including the no-direct-reactivate-endpoint workaround).
+- **Evaluation suite refreshed** — 10 questions, 6 state-independent + 4 sandbox-specific, covering composite-tool identification, strict-schema rejection, annotation correctness, and the v0.4.1 cursor pagination contract.
+
+> **Multi-MCP roadmap**: At ~30 tools, Anthropic's mcp-builder methodology starts to degrade LLM selection accuracy. Future scope (orders / fulfillment / reports / ads) will ship as separate sibling repos rather than bloating this one. See `docs/MCP_SETUP_CN.md` for the planned split.
+
 ## Schema tightening in v0.2.2
 
 The `payload` field on `walmart_submit_feed`, `walmart_update_inventory`, and `walmart_update_price` was `z.any()` in v0.2.1 and earlier, which silently allowed `undefined` / `null` / arbitrary scalar inputs. v0.2.2 tightened the schema so the field must be an object (or a string for `submit_feed` XML feeds). **If you were calling these tools with `payload: null`, `payload: "some string"` for non-feed tools, or omitting `payload` entirely, the call will now be rejected at the MCP validation layer (JSON-RPC error `-32602`) before any HTTP request goes out.** Migration: pass a proper request body object.
@@ -197,4 +209,10 @@ node scripts/smoke-test-api.mjs
 
 # Write-API tests (sandbox-only; creates feeds + calls retire)
 node scripts/smoke-test-writes.mjs
+
+# Full-store audit ETL (sandbox or prod) — writes CSV, prints summary only
+node scripts/audit-store.mjs --output store-audit.csv
+
+# Production-only endpoint discovery (refuses to run against sandbox)
+WALMART_SANDBOX=false node scripts/probe-prod-endpoints.mjs
 ```

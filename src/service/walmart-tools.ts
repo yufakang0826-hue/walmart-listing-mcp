@@ -244,7 +244,7 @@ function registerAuthTools(server: McpServer): void {
 
   registerTool(server, {
     name: "walmart_list_seller_profiles",
-    description: "List locally stored Walmart seller profiles and indicate which one is active.",
+    description: "List all seller profiles stored locally in .walmart-seller-profiles.json, indicating which one is currently active. Use at the start of a multi-store session to see what's available + which profile listing tools will default to. Profile content (clientId/clientSecret presence, marketplace, svcEnv) is included but secrets are not echoed.",
     annotations: READ_LOCAL,
     inputSchema: z.object({}).strict(),
     outputSchema: z.object({ sellerProfiles: z.array(sellerProfileShape) }).passthrough(),
@@ -253,7 +253,7 @@ function registerAuthTools(server: McpServer): void {
 
   registerTool(server, {
     name: "walmart_set_active_seller_profile",
-    description: "Set the active Walmart seller profile used by listing tools when sellerProfileId is omitted.",
+    description: "Switch the default seller profile used by every other tool when its sellerProfileId arg is omitted. Use when toggling between multiple Walmart store accounts. Reversible — just call again with a different profile id. Does NOT modify any Walmart-side data, only local profile state.",
     annotations: WRITE_LOCAL_SAFE,
     inputSchema: z
       .object({ sellerProfileId: z.string().describe("Seller profile ID to activate.") })
@@ -269,7 +269,7 @@ function registerAuthTools(server: McpServer): void {
 
   registerTool(server, {
     name: "walmart_get_token_status",
-    description: "Show the current Walmart authentication status used by this MCP server.",
+    description: "Inspect the server's current auth state: which profile is active, whether credentials are loaded, whether using the local profile store, marketplace + sandbox flags, and the list of available profile ids. Read-only diagnostic — does NOT fetch a token. Use to debug 'why is my Walmart call failing — is it auth, network, or business?' before calling walmart_verify_credentials.",
     annotations: READ_LOCAL,
     inputSchema: z.object({ sellerProfileId: sellerProfileIdField }).strict(),
     outputSchema: tokenStatusShape,
@@ -278,7 +278,7 @@ function registerAuthTools(server: McpServer): void {
 
   registerTool(server, {
     name: "walmart_verify_credentials",
-    description: "Verify that the configured Walmart clientId and clientSecret can fetch an access token.",
+    description: "Smoke-test the configured Walmart credentials by attempting one OAuth token exchange. Use as the first call in a new session to confirm credentials are set + the network can reach Walmart + the token endpoint isn't rate-limiting you. Does NOT touch any business data. Returns { tokenType: 'Bearer', expiresIn, ...} on success or an error describing whether it's a credential issue vs an upstream Walmart problem.",
     annotations: READ_REMOTE,
     inputSchema: z.object({ sellerProfileId: sellerProfileIdField }).strict(),
     outputSchema: z
@@ -318,7 +318,7 @@ function registerListingTools(server: McpServer): void {
 
   registerTool(server, {
     name: "walmart_get_item",
-    description: "Get a single Walmart item by SKU. Returns seller-side metadata (publishedStatus, lifecycleStatus, wpid, etc.) — NOT product content like description/images/brand. For product content use walmart_search_walmart_catalog.",
+    description: "Get the full seller-side metadata record for a SKU: sku, wpid, gtin, mart, availability, publishedStatus, lifecycleStatus, isDuplicate, unpublishedReasons[], productName, price. Returns 404 if you don't own the SKU. Does NOT return product content like description / images / brand — for those use walmart_search_walmart_catalog({ gtin }). For status-only summary use walmart_get_item_status (lighter). For an everything-in-one-call composite use walmart_get_complete_item.",
     annotations: READ_REMOTE,
     inputSchema: z.object({ sku: skuField, sellerProfileId: sellerProfileIdField }).strict(),
     outputSchema: passthroughShape,
@@ -419,7 +419,7 @@ function registerListingTools(server: McpServer): void {
 
   registerTool(server, {
     name: "walmart_get_item_status",
-    description: "Get Walmart item status fields by SKU using the item lookup response.",
+    description: "Get derived status fields for a SKU: publishedStatus (PUBLISHED/UNPUBLISHED), lifecycleStatus (ACTIVE/RETIRED), availability (In_stock/Out_of_stock), isDuplicate, unpublishedReasons. Lighter than walmart_get_item — strips the full item record down to status-relevant fields only. Returns 404 if the SKU is not in your account.",
     annotations: READ_REMOTE,
     inputSchema: z.object({ sku: skuField, sellerProfileId: sellerProfileIdField }).strict(),
     outputSchema: z
@@ -509,7 +509,7 @@ function registerListingTools(server: McpServer): void {
 
   registerTool(server, {
     name: "walmart_retire_item",
-    description: "Retire or delist a Walmart item by SKU.",
+    description: "Retire (delist) a single SKU. The item transitions to lifecycleStatus=RETIRED + publishedStatus=UNPUBLISHED. Idempotent — retiring an already-retired SKU is a no-op. TO REACTIVATE: there is no dedicated reactivate endpoint; re-submit the full MP_ITEM feed payload via walmart_submit_feed({ feedType: 'MP_ITEM', payload: <full record> }) and the item will return to ACTIVE after feed processing (24–48h for full republication). For bulk retire across many SKUs, use walmart_submit_feed with feedType='MP_RETIRE_ITEM' instead — fewer API calls.",
     annotations: WRITE_REMOTE_IDEMPOTENT,
     inputSchema: z.object({ sku: skuField, sellerProfileId: sellerProfileIdField }).strict(),
     outputSchema: successShape,
@@ -522,7 +522,7 @@ function registerListingTools(server: McpServer): void {
 
   registerTool(server, {
     name: "walmart_submit_feed",
-    description: "Submit a Walmart feed for listing operations. Payload is uploaded as multipart/form-data (Walmart API requirement). Common feedType values include MP_ITEM and price.",
+    description: "Submit a Walmart feed — the canonical path for ALL listing writes (create item, update content, bulk inventory, bulk price, retire, reactivate). Walmart has no direct per-SKU POST/PUT for item content. Common feedTypes: MP_ITEM (new listing OR reactivate retired one — re-submit full payload), MP_ITEM_MATCH (offer on existing Walmart catalog item, lighter payload), MP_MAINTENANCE (partial update to existing SKU), MP_RETIRE_ITEM (bulk retire), inventory / MP_INVENTORY (single-FC / multi-FC stock), price / PROMO_PRICE / PRICE_AND_PROMOTION (price + promo). Returns a feedId immediately; the feed itself processes asynchronously — ALWAYS follow up with walmart_get_feed_status to confirm processing succeeded (a 200 here only means Walmart accepted the submission, not that the items inside validated). Payload is object for JSON or string for XML.",
     // Each submission creates a new feed with a new feedId — not idempotent.
     annotations: WRITE_REMOTE_NONIDEMPOTENT,
     inputSchema: z
@@ -547,7 +547,7 @@ function registerListingTools(server: McpServer): void {
 
   registerTool(server, {
     name: "walmart_get_feed_status",
-    description: "Get Walmart feed processing status by feed ID.",
+    description: "Get Walmart feed processing details by feedId. Returns feedStatus (RECEIVED / INPROGRESS / PROCESSED / ERROR), itemsReceived, itemsSucceeded, itemsFailed, itemsProcessing, plus per-item error details. Use after walmart_submit_feed to confirm whether items inside the feed actually validated and published — submit_feed returning a feedId only means Walmart accepted the submission. Polling cadence: every 30s for the first 5 min; if still INPROGRESS, fall back to every few minutes.",
     annotations: READ_REMOTE,
     inputSchema: z
       .object({
@@ -561,7 +561,7 @@ function registerListingTools(server: McpServer): void {
 
   registerTool(server, {
     name: "walmart_get_feeds",
-    description: "List Walmart feeds for the active seller profile.",
+    description: "List the most recent Walmart feeds for the active seller profile, with their feedStatus / processing counts. Use for: (a) auditing recent upload activity, (b) finding feedIds for past submissions to replay or inspect, (c) finding the most recent successfully PROCESSED MP_ITEM feed as a template payload reference. Filter by feedType to narrow (e.g. only MP_ITEM history).",
     annotations: READ_REMOTE,
     inputSchema: z
       .object({
@@ -589,7 +589,7 @@ function registerListingTools(server: McpServer): void {
 
   registerTool(server, {
     name: "walmart_get_taxonomy",
-    description: "Get Walmart taxonomy data for listing category work.",
+    description: "Get the Walmart category taxonomy tree for a feedType (MP_ITEM default) and version (4.2 default). Use when building a new MP_ITEM payload to identify the correct category path + which category-specific attributes Walmart requires. This is the closest substitute for /v3/items/specs (which is not exposed in sandbox).",
     annotations: READ_REMOTE,
     inputSchema: z
       .object({
@@ -605,7 +605,7 @@ function registerListingTools(server: McpServer): void {
 
   registerTool(server, {
     name: "walmart_get_departments",
-    description: "Get Walmart departments used for listing taxonomy navigation. KNOWN PRODUCTION ISSUE: Walmart's midas-data-api backend has been returning 520 SYSTEM_ERROR for this endpoint in production for at least 24h as of v0.3.3. Sandbox works fine. If this 520s in production, use walmart_get_taxonomy as a workaround — it returns the same category structure plus attribute schemas.",
+    description: "List the top-level Walmart department / super-department structure (e.g. 'PERSONAL CARE' → 'ORAL CARE'). Use as a category navigator when the user is exploring where to place a new listing. KNOWN PRODUCTION ISSUE: Walmart's midas-data-api backend has been returning 520 SYSTEM_ERROR for this endpoint in production. Sandbox works fine. If production 520s, use walmart_get_taxonomy instead — it returns the same category structure plus the per-category attribute schemas.",
     annotations: READ_REMOTE,
     inputSchema: z.object({ sellerProfileId: sellerProfileIdField }).strict(),
     outputSchema: passthroughShape,
@@ -614,7 +614,7 @@ function registerListingTools(server: McpServer): void {
 
   registerTool(server, {
     name: "walmart_get_inventory",
-    description: "Get Walmart inventory for a single SKU.",
+    description: "Get current inventory quantity for a single SKU (default ship node). Returns { sku, quantity: { amount, unit } }. Walmart's /v3/inventory endpoint requires sku — there is NO bulk-list endpoint, so to enumerate all inventory you must iterate via walmart_get_items + per-SKU walmart_get_inventory. For large catalogs, use scripts/audit-store.mjs --with-inventory.",
     annotations: READ_REMOTE,
     inputSchema: z.object({ sku: skuField, sellerProfileId: sellerProfileIdField }).strict(),
     outputSchema: passthroughShape,
@@ -623,7 +623,7 @@ function registerListingTools(server: McpServer): void {
 
   registerTool(server, {
     name: "walmart_update_inventory",
-    description: "Update Walmart inventory for a SKU. The payload should follow Walmart's inventory body shape.",
+    description: "Update inventory for a single SKU at the default ship node. Walmart payload shape: { sku, quantity: { unit: 'EACH', amount: <number> } }. PUT-style idempotent (same payload → same end state). For multi-FC inventory, use walmart_submit_feed with feedType='MP_INVENTORY' instead. Returns the updated record on success.",
     annotations: WRITE_REMOTE_IDEMPOTENT,
     inputSchema: z
       .object({
@@ -639,7 +639,7 @@ function registerListingTools(server: McpServer): void {
 
   registerTool(server, {
     name: "walmart_update_price",
-    description: "Update Walmart price for a SKU. The payload should follow Walmart's /v3/price body shape.",
+    description: "Update standard price for a single SKU. Walmart payload shape: { Price: { itemIdentifier: { sku, productIdType: 'SKU' }, pricingList: { pricing: [{ currentPrice: { value: { amount, currency: 'USD' } } }] } } }. For promotional pricing (sale, clearance, reduced), use walmart_submit_feed with feedType='PROMO_PRICE'. For bulk updates across many SKUs, use feedType='price' or 'PRICE_AND_PROMOTION'. Idempotent for repeated identical calls.",
     annotations: WRITE_REMOTE_IDEMPOTENT,
     inputSchema: z
       .object({
