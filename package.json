@@ -1,39 +1,22 @@
 {
-  "name": "walmart-mcp-server",
-  "version": "0.5.1",
-  "description": "Standalone MCP server for Walmart Marketplace and Walmart Connect seller workflows",
+  "name": "walmart-mcp-suite",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Monorepo of MCP servers and shared libraries for Walmart Marketplace (Global API — US, MX, CA, CL).",
   "type": "module",
-  "main": "dist/index.js",
-  "bin": {
-    "walmart-mcp-server": "dist/index.js"
-  },
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE"
-  ],
   "engines": {
     "node": ">=20"
   },
-  "scripts": {
-    "build": "tsc --project tsconfig.build.json",
-    "start": "node dist/index.js",
-    "dev": "tsx src/index.ts",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run typecheck && npm test && npm run build"
-  },
-  "keywords": [
-    "mcp",
-    "model-context-protocol",
-    "walmart",
-    "marketplace",
-    "walmart-connect",
-    "seller",
-    "ecommerce"
+  "workspaces": [
+    "packages/*",
+    "servers/*"
   ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "clean": "npm exec --workspaces -- rm -rf dist"
+  },
   "author": "yufakang0826-hue (https://github.com/yufakang0826-hue)",
   "license": "Apache-2.0",
   "repository": {
@@ -43,17 +26,5 @@
   "homepage": "https://github.com/yufakang0826-hue/walmart-listing-mcp#readme",
   "bugs": {
     "url": "https://github.com/yufakang0826-hue/walmart-listing-mcp/issues"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.11.1",
-    "dotenv": "^16.5.0",
-    "tsx": "^4.20.3",
-    "zod": "^3.23.8"
-  },
-  "devDependencies": {
-    "@types/node": "^22.15.17",
-    "@vitest/coverage-v8": "^4.1.5",
-    "typescript": "^5.6.3",
-    "vitest": "^4.1.5"
   }
 }
