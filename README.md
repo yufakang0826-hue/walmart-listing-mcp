@@ -33,6 +33,11 @@ The wildcard tool `walmart_invoke_listing_api` has been **removed**. Every opera
 
 If you need an endpoint not covered above, open an issue or a PR adding a dedicated tool — the design choice is "no escape hatch" so the LLM cannot be tricked into hitting an unintended endpoint.
 
+## What's new in v0.5.1
+
+- **New tool: `walmart_get_unpublished_counts`** — aggregate unpublished-item counts (broken down by reason: no shipping info, no primary image, etc.) without scanning every SKU. Verified to exist in production via `probe-prod-endpoints.mjs` (sandbox does not expose this endpoint). **Known production issue**: Walmart's aurora unpublished-item-service backend is currently returning HTTP 500. The tool ships with a fallback note in its description pointing to `walmart_get_items` + client-side aggregation, or `scripts/audit-store.mjs` which already surfaces `unpublishedReasons` per SKU.
+- 22 tools total (up from 21).
+
 ## What's new in v0.5.0
 
 **Orchestration layer — no new tools, much sharper LLM experience.** The 21 existing tools cover Walmart's full listing surface; this release polishes how an LLM uses them.
@@ -103,16 +108,17 @@ Ready-to-edit templates (replace `<ABSOLUTE_PATH_TO_REPO>` and `<NODE_PATH>`):
 - [`examples/codex-config.toml`](./examples/codex-config.toml)
 - [`examples/claude-settings.json`](./examples/claude-settings.json) — works for both Claude Desktop and Claude Code
 
-## Known production issues (as of v0.3.3)
+## Known production issues (as of v0.5.1)
 
 Discovered through user dogfooding against a live production Walmart seller account. Sandbox does not reproduce these.
 
 - **`walmart_search_my_catalog` returns 400 in production** with `"Please provide at least one Valid Query/Filters"`. The same body shape that returns 20 items in sandbox is rejected by production. Walmart sandbox-vs-production divergence on this endpoint. **Workaround:** use `walmart_get_items` (supports `lifecycleStatus` filter) for now. The tool description includes a `filter` parameter you can experiment with if you have time to iterate.
 - **`walmart_get_departments` has been returning 520 SYSTEM_ERROR in production** for at least 24h as of v0.3.3 release. Walmart's `midas-data-api` backend is failing. Sandbox works fine. **Workaround:** use `walmart_get_taxonomy` — same category structure plus the full attribute schemas.
 - **`walmart_get_bulk_inventory` was removed in v0.3.3** because the underlying `/v3/inventory` endpoint requires a SKU parameter (no bulk list supported by Walmart). To enumerate inventory across your catalog, iterate over `walmart_get_items` and call `walmart_get_inventory({ sku })` per SKU.
+- **`walmart_get_unpublished_counts` returns HTTP 502 in production** (proxied from Walmart's aurora unpublished-item-service backend returning 500). Verified 2026-05-22 via `probe-prod-endpoints.mjs`. The endpoint path exists (otherwise it would 404) — the backend is broken upstream of the API gateway. **Workaround:** call `walmart_get_items({ publishStatus: "UNPUBLISHED" })` and aggregate `unpublishedReasons` client-side, or use `scripts/audit-store.mjs` which already surfaces this column per SKU.
 - **`walmart_get_items` is cursor-paginated, not offset-paginated.** Production exhibits duplicate SKUs across offset pages when called in parallel (observed in 815-SKU store audit). v0.4.1 makes the tool description explicit: iterate sequentially using `response.nextCursor`, never fan out parallel offset calls. The `offset` input is kept for backward compat but marked deprecated.
 
-## Tools (21 total)
+## Tools (22 total)
 
 **Auth / profile management (5)**
 - `walmart_upsert_seller_profile`
@@ -145,6 +151,9 @@ Discovered through user dogfooding against a live production Walmart seller acco
 **Taxonomy (2)**
 - `walmart_get_taxonomy`
 - `walmart_get_departments`
+
+**Insights — unpublished items (1, new in v0.5.1)**
+- `walmart_get_unpublished_counts` — aggregate counts of unpublished items by reason. ⚠️ Walmart backend currently 500s; see Known production issues below for the fallback.
 
 **Inventory (2)**
 - `walmart_get_inventory` — per-SKU lookup (Walmart's /v3/inventory requires sku)

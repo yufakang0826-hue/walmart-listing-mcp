@@ -460,6 +460,10 @@ export class WalmartClient {
     return this.request({ method: "GET", path: "/v3/utilities/taxonomy/departments" });
   }
 
+  async getUnpublishedItemsCounts(): Promise<unknown> {
+    return this.request({ method: "GET", path: "/v3/insights/items/unpublished/counts" });
+  }
+
   async getFeedStatus(feedId: string): Promise<unknown> {
     return this.request({ method: "GET", path: `/v3/feeds/${encodeURIComponent(feedId)}`, params: { includeDetails: true } });
   }
