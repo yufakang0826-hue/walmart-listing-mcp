@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
-import { WalmartClient, WalmartClientError, __resetTokenCacheForTests } from "../src/service/walmart-client.js";
+import { WalmartClient, WalmartClientError, __resetTokenCacheForTests } from "../src/walmart-client.js";
 
 type FetchArgs = Parameters<typeof fetch>;
 type FetchReturn = ReturnType<typeof fetch>;

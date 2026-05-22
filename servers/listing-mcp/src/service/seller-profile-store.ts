@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { DEFAULT_PROFILE_STORE_FILENAME } from "../constant/constants.js";
+
+const DEFAULT_PROFILE_STORE_FILENAME = ".walmart-seller-profiles.json";
 
 export interface SellerProfileRecord {
   sellerProfileId: string;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { serializeSuccess } from "../src/helper/format.js";
+import { serializeSuccess } from "../src/format.js";
 
 describe("serializeSuccess", () => {
   describe("text content", () => {

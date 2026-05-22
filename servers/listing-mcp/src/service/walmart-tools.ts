@@ -1,7 +1,7 @@
 import { type McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import { serializeError, serializeSuccess } from "../helper/format.js";
+import { serializeError, serializeSuccess } from "@walmart-mcp/client";
 import { authService } from "./auth-service.js";
 
 type ToolAnnotations = {

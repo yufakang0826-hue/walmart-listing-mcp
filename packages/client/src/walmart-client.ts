@@ -8,7 +8,7 @@ import {
   TOKEN_SAFETY_WINDOW_MS,
   getMarketplaceBaseUrl,
   isSandboxEnvironment,
-} from "../constant/constants.js";
+} from "./constants.js";
 
 type HttpMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
 type QueryParams = Record<string, string | number | boolean | undefined>;

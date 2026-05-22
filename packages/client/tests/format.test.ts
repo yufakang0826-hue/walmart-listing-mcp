@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatError } from "../src/helper/format.js";
+import { formatError } from "../src/format.js";
 
 describe("formatError", () => {
   it("redacts secret-like fields nested inside error details", () => {

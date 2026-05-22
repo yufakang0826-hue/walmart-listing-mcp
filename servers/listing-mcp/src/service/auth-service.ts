@@ -1,6 +1,5 @@
-import { DEFAULT_MARKETPLACE, isSandboxEnvironment } from "../constant/constants.js";
+import { DEFAULT_MARKETPLACE, WalmartClient, isSandboxEnvironment } from "@walmart-mcp/client";
 import { sellerProfileStore, type SellerProfileRecord } from "./seller-profile-store.js";
-import { WalmartClient } from "./walmart-client.js";
 
 interface UpsertSellerProfileOptions {
   sellerProfileId: string;
