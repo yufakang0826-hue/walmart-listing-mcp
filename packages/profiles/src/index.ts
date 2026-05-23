@@ -1,2 +1,2 @@
-// @walmart-mcp/profiles — stub. Filled in Task #64.
-export const PLACEHOLDER = true;
+// @walmart-mcp/profiles — sellerProfile store with WalmartMarket routing.
+export * from "./seller-profile-store.js";

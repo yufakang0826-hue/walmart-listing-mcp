@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { WM_GLOBAL_VERSION, type WalmartMarket } from "@walmart-mcp/types";
 import {
   BASE_DELAY_MS,
   DEFAULT_SERVICE_NAME,
@@ -38,7 +39,11 @@ interface WalmartClientConfig {
   sellerProfileId?: string | null;
   clientId: string;
   clientSecret: string;
-  marketplace: string;
+  /**
+   * Walmart Global API market. Sent as `WM_MARKET` header on every request
+   * (including OAuth token call). Required since v1.0.0.
+   */
+  market: WalmartMarket;
   channelType?: string | null;
   consumerId?: string | null;
   svcEnv?: string | null;
@@ -172,7 +177,7 @@ export class WalmartClient {
   private readonly sellerProfileId: string | null;
   private readonly clientId: string;
   private readonly clientSecret: string;
-  private readonly marketplace: string;
+  private readonly market: WalmartMarket;
   private readonly channelType: string | null;
   private readonly consumerId: string | null;
   private readonly svcEnv: string;
@@ -181,7 +186,7 @@ export class WalmartClient {
     this.sellerProfileId = config.sellerProfileId || null;
     this.clientId = config.clientId;
     this.clientSecret = config.clientSecret;
-    this.marketplace = config.marketplace;
+    this.market = config.market;
     this.channelType = config.channelType || null;
     this.consumerId = config.consumerId || null;
     this.svcEnv = config.svcEnv || "prod";
@@ -199,7 +204,9 @@ export class WalmartClient {
   }
 
   private get cacheKey(): string {
-    const scope = `${this.svcEnv}:${this.marketplace}`;
+    // Tokens are scoped per (svcEnv, market, clientId/profile). Each market needs
+    // its own token even when the underlying clientId is the same.
+    const scope = `${this.svcEnv}:${this.market}`;
     return this.sellerProfileId ? `${scope}:${this.sellerProfileId}` : `${scope}:${this.clientId}`;
   }
 
@@ -229,6 +236,10 @@ export class WalmartClient {
         "Content-Type": "application/x-www-form-urlencoded",
         "WM_SVC.NAME": DEFAULT_SERVICE_NAME,
         "WM_QOS.CORRELATION_ID": randomUUID(),
+        // Global API requires WM_MARKET on the token call itself per docs:
+        // https://developer.walmart.com/mx-marketplace/reference/tokenapi
+        "WM_MARKET": this.market,
+        "WM_GLOBAL_VERSION": WM_GLOBAL_VERSION,
         Accept: "application/json",
       },
       body: "grant_type=client_credentials",
@@ -297,6 +308,8 @@ export class WalmartClient {
             "WM_SEC.ACCESS_TOKEN": token,
             "WM_SVC.NAME": DEFAULT_SERVICE_NAME,
             "WM_QOS.CORRELATION_ID": randomUUID(),
+            "WM_MARKET": this.market,
+            "WM_GLOBAL_VERSION": WM_GLOBAL_VERSION,
             ...this.partnerHeaders,
             Accept: options.accept || "application/json",
             ...bodyHeaders,
@@ -484,10 +497,10 @@ export class WalmartClient {
     return this.request({ method: "PUT", path: "/v3/price", body: payload });
   }
 
-  getContext(): { sellerProfileId: string | null; marketplace: string; sandbox: boolean } {
+  getContext(): { sellerProfileId: string | null; market: WalmartMarket; sandbox: boolean } {
     return {
       sellerProfileId: this.sellerProfileId,
-      marketplace: this.marketplace,
+      market: this.market,
       sandbox: isSandboxEnvironment(),
     };
   }

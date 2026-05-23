@@ -1,10 +1,21 @@
-import { DEFAULT_MARKETPLACE, WalmartClient, isSandboxEnvironment } from "@walmart-mcp/client";
-import { sellerProfileStore, type SellerProfileRecord } from "./seller-profile-store.js";
+import { WalmartClient, isSandboxEnvironment } from "@walmart-mcp/client";
+import { sellerProfileStore, type SellerProfileRecord } from "@walmart-mcp/profiles";
+import { WALMART_MARKETS, type WalmartMarket } from "@walmart-mcp/types";
+
+function isValidMarket(value: unknown): value is WalmartMarket {
+  return typeof value === "string" && (WALMART_MARKETS as readonly string[]).includes(value);
+}
+
+function coerceMarket(raw: string | undefined, fallback: WalmartMarket = "us"): WalmartMarket {
+  if (!raw) return fallback;
+  const lower = raw.toLowerCase();
+  return isValidMarket(lower) ? lower : fallback;
+}
 
 interface UpsertSellerProfileOptions {
   sellerProfileId: string;
   sellerProfileLabel?: string;
-  marketplace?: string;
+  market?: WalmartMarket;
   clientId?: string;
   clientSecret?: string;
   channelType?: string;
@@ -16,7 +27,7 @@ interface UpsertSellerProfileOptions {
 interface SellerProfileSummary {
   sellerProfileId: string;
   sellerProfileLabel?: string;
-  marketplace: string;
+  market: WalmartMarket;
   hasClientId: boolean;
   hasClientSecret: boolean;
   hasChannelType: boolean;
@@ -33,7 +44,7 @@ interface TokenStatus {
   sellerProfileId: string | null;
   sellerProfileLabel: string | null;
   activeSellerProfileId: string | null;
-  marketplace: string;
+  market: WalmartMarket;
   sandbox: boolean;
   availableSellerProfiles: SellerProfileSummary[];
 }
@@ -43,7 +54,7 @@ interface ResolvedCredentials {
   sellerProfileLabel: string | null;
   clientId: string;
   clientSecret: string;
-  marketplace: string;
+  market: WalmartMarket;
   channelType: string | null;
   consumerId: string | null;
   svcEnv: string;
@@ -58,8 +69,12 @@ class WalmartAuthService {
     return process.env.WALMART_CLIENT_SECRET || "";
   }
 
-  private get envMarketplace(): string {
-    return process.env.WALMART_MARKETPLACE || DEFAULT_MARKETPLACE;
+  private get envMarket(): WalmartMarket {
+    // v1.0.0 prefers WALMART_MARKET (lowercase). Falls back to legacy
+    // WALMART_MARKETPLACE for backward compat with v0.x .env files.
+    const explicit = process.env.WALMART_MARKET;
+    if (explicit) return coerceMarket(explicit);
+    return coerceMarket(process.env.WALMART_MARKETPLACE);
   }
 
   private get envChannelType(): string {
@@ -88,7 +103,7 @@ class WalmartAuthService {
     return {
       sellerProfileId: profile.sellerProfileId,
       sellerProfileLabel: profile.sellerProfileLabel,
-      marketplace: profile.marketplace,
+      market: profile.market,
       hasClientId: Boolean(profile.clientId),
       hasClientSecret: Boolean(profile.clientSecret),
       hasChannelType: Boolean(profile.channelType || this.envChannelType),
@@ -109,9 +124,10 @@ class WalmartAuthService {
 
   upsertSellerProfile(options: UpsertSellerProfileOptions): SellerProfileSummary {
     const current = sellerProfileStore.getProfile(options.sellerProfileId);
+    const market = options.market || current?.market || this.envMarket;
     const profile = sellerProfileStore.upsertProfile(options.sellerProfileId, {
       sellerProfileLabel: options.sellerProfileLabel,
-      marketplace: options.marketplace || current?.marketplace || this.envMarketplace,
+      market,
       clientId: options.clientId || current?.clientId,
       clientSecret: options.clientSecret || current?.clientSecret,
       channelType: options.channelType || current?.channelType,
@@ -132,7 +148,7 @@ class WalmartAuthService {
 
     const clientId = profile?.clientId || this.envClientId;
     const clientSecret = profile?.clientSecret || this.envClientSecret;
-    const marketplace = profile?.marketplace || this.envMarketplace;
+    const market = profile?.market || this.envMarket;
     const channelType = profile?.channelType || this.envChannelType || null;
     const consumerId = profile?.consumerId || this.envConsumerId || null;
     const svcEnv = profile?.svcEnv || this.envSvcEnv;
@@ -149,7 +165,7 @@ class WalmartAuthService {
       sellerProfileLabel: profile?.sellerProfileLabel || null,
       clientId,
       clientSecret,
-      marketplace,
+      market,
       channelType,
       consumerId,
       svcEnv,
@@ -162,7 +178,7 @@ class WalmartAuthService {
       sellerProfileId: credentials.sellerProfileId,
       clientId: credentials.clientId,
       clientSecret: credentials.clientSecret,
-      marketplace: credentials.marketplace,
+      market: credentials.market,
       channelType: credentials.channelType,
       consumerId: credentials.consumerId,
       svcEnv: credentials.svcEnv,
@@ -171,7 +187,7 @@ class WalmartAuthService {
 
   async verifyCredentials(profileId?: string): Promise<{
     sellerProfileId: string | null;
-    marketplace: string;
+    market: WalmartMarket;
     sandbox: boolean;
     expiresIn: number;
     expiresAt: string;
@@ -181,7 +197,7 @@ class WalmartAuthService {
     const verification = await this.createClient(profileId).verifyCredentials();
     return {
       sellerProfileId: credentials.sellerProfileId,
-      marketplace: credentials.marketplace,
+      market: credentials.market,
       sandbox: isSandboxEnvironment(),
       expiresIn: verification.expiresIn,
       expiresAt: new Date(verification.expiresAt).toISOString(),
@@ -190,24 +206,33 @@ class WalmartAuthService {
   }
 
   getTokenStatus(profileId?: string): TokenStatus {
-    const credentials = this.getResolvedCredentialsSafe(profileId);
+    const safe = this.getResolvedCredentialsSafe(profileId);
     return {
-      authenticated: credentials.hasClientCredentials,
-      hasClientCredentials: credentials.hasClientCredentials,
-      usingSellerProfileStore: Boolean(credentials.sellerProfileId),
-      sellerProfileId: credentials.sellerProfileId,
-      sellerProfileLabel: credentials.sellerProfileLabel,
+      authenticated: safe.hasClientCredentials,
+      hasClientCredentials: safe.hasClientCredentials,
+      usingSellerProfileStore: Boolean(safe.sellerProfileId),
+      sellerProfileId: safe.sellerProfileId,
+      sellerProfileLabel: safe.sellerProfileLabel,
       activeSellerProfileId: sellerProfileStore.getActiveProfileId() || null,
-      marketplace: credentials.marketplace,
+      market: safe.market,
       sandbox: isSandboxEnvironment(),
       availableSellerProfiles: this.listSellerProfiles(),
     };
   }
 
+  /**
+   * Resolve the active market without throwing — used by market-guard checks
+   * in walmart-tools.ts to decide whether US-only endpoints should be called.
+   */
+  getActiveMarket(profileId?: string): WalmartMarket {
+    const profile = this.getSelectedProfile(profileId);
+    return profile?.market || this.envMarket;
+  }
+
   private getResolvedCredentialsSafe(profileId?: string): {
     sellerProfileId: string | null;
     sellerProfileLabel: string | null;
-    marketplace: string;
+    market: WalmartMarket;
     hasClientCredentials: boolean;
   } {
     const profile = this.getSelectedProfile(profileId);
@@ -217,7 +242,7 @@ class WalmartAuthService {
     return {
       sellerProfileId: profile?.sellerProfileId || null,
       sellerProfileLabel: profile?.sellerProfileLabel || null,
-      marketplace: profile?.marketplace || this.envMarketplace,
+      market: profile?.market || this.envMarket,
       hasClientCredentials: Boolean(clientId && clientSecret),
     };
   }

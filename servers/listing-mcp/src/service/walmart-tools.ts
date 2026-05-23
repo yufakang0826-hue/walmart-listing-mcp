@@ -2,7 +2,28 @@ import { type McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { serializeError, serializeSuccess } from "@walmart-mcp/client";
+import type { WalmartMarket } from "@walmart-mcp/types";
 import { authService } from "./auth-service.js";
+
+/**
+ * Throw a structured error if the active profile's market is not in `allowed`.
+ * Used by tools whose Walmart endpoint exists only on the US Marketplace
+ * (Insights / Listing Quality — Walmart's data-science backbone is US-only).
+ */
+function assertMarketAllowed(profileId: string | undefined, allowed: WalmartMarket[], toolName: string): void {
+  const market = authService.getActiveMarket(profileId);
+  if (!allowed.includes(market)) {
+    const error = new Error(
+      `Tool ${toolName} is only available in markets: ${allowed.join(", ")}. ` +
+      `Active profile market is '${market}'. ` +
+      `Switch to a profile in an allowed market via walmart_set_active_seller_profile.`,
+    );
+    (error as Error & { code?: string; activeMarket?: string; allowedMarkets?: string[] }).code = "MARKET_NOT_SUPPORTED";
+    (error as Error & { activeMarket?: string }).activeMarket = market;
+    (error as Error & { allowedMarkets?: string[] }).allowedMarkets = allowed;
+    throw error;
+  }
+}
 
 type ToolAnnotations = {
   title?: string;
@@ -110,7 +131,7 @@ const sellerProfileShape = z
   .object({
     sellerProfileId: z.string(),
     sellerProfileLabel: z.string().optional(),
-    marketplace: z.string(),
+    market: z.enum(["us", "mx", "ca", "cl"]),
     channelType: z.string().nullable().optional(),
     consumerId: z.string().nullable().optional(),
     svcEnv: z.string(),
@@ -129,9 +150,9 @@ const tokenStatusShape = z
     sellerProfileId: z.string().nullable(),
     sellerProfileLabel: z.string().nullable(),
     activeSellerProfileId: z.string().nullable(),
-    marketplace: z.string(),
+    market: z.enum(["us", "mx", "ca", "cl"]),
     sandbox: z.boolean(),
-    availableSellerProfiles: z.array(z.string()),
+    availableSellerProfiles: z.array(z.unknown()),
   })
   .passthrough();
 
@@ -212,15 +233,18 @@ export async function registerWalmartTools(server: McpServer): Promise<void> {
 function registerAuthTools(server: McpServer): void {
   registerTool(server, {
     name: "walmart_upsert_seller_profile",
-    description: "Create or update a Walmart seller profile. Stores clientId, clientSecret, marketplace, channelType, consumerId, and svcEnv locally.",
+    description: "Create or update a Walmart seller profile (one profile per Walmart marketplace account). Walmart Global API requires a separate clientId/secret pair per market — store each as its own profile (e.g. walmart-us-main, walmart-mx-main, walmart-ca-main, walmart-cl-main). The `market` field is REQUIRED on first create and routes every API call via the WM_MARKET header. Allowed markets: us | mx | ca | cl.",
     annotations: WRITE_LOCAL_DESTRUCTIVE,
     inputSchema: z
       .object({
-        sellerProfileId: z.string().describe("Seller profile ID, for example walmart-us-main."),
+        sellerProfileId: z.string().describe("Seller profile ID, for example walmart-us-main or walmart-mx-main."),
         sellerProfileLabel: z.string().optional().describe("Optional human-readable label for the seller profile."),
-        marketplace: z.string().optional().describe("Marketplace code such as US, CA, or MX."),
-        clientId: z.string().optional().describe("Optional Walmart client ID."),
-        clientSecret: z.string().optional().describe("Optional Walmart client secret."),
+        market: z
+          .enum(["us", "mx", "ca", "cl"])
+          .optional()
+          .describe("Walmart Global API market (us | mx | ca | cl). REQUIRED when creating a new profile; optional when updating an existing one. Sent as WM_MARKET header on every API call."),
+        clientId: z.string().optional().describe("Walmart client ID for this market. Different from other markets."),
+        clientSecret: z.string().optional().describe("Walmart client secret for this market."),
         channelType: z.string().optional().describe("Optional WM_CONSUMER.CHANNEL.TYPE (Consumer Channel Type UUID) from Walmart Developer Portal."),
         consumerId: z.string().optional().describe("Optional WM_CONSUMER.ID (Consumer ID) from Walmart Developer Portal. Required by Walmart routing layer for feeds."),
         svcEnv: z.string().optional().describe("Optional WM_SVC.ENV value. Defaults to 'prod' (or 'stg' when WALMART_SANDBOX=true)."),
@@ -232,7 +256,7 @@ function registerAuthTools(server: McpServer): void {
       authService.upsertSellerProfile({
         sellerProfileId: input.sellerProfileId,
         sellerProfileLabel: input.sellerProfileLabel,
-        marketplace: input.marketplace,
+        market: input.market,
         clientId: input.clientId,
         clientSecret: input.clientSecret,
         channelType: input.channelType,
@@ -354,7 +378,7 @@ function registerListingTools(server: McpServer): void {
 
   registerTool(server, {
     name: "walmart_get_listing_quality_score",
-    description: "Walmart Insights — listing quality scores. Omit sku/itemId to get the store-wide aggregate (score, postPurchaseQuality, overAllQuality across all SKUs). Pass sku OR itemId to scope the response to a single SKU's quality breakdown (content/pricing/shipping/rating/offer sub-scores).",
+    description: "Walmart Insights — listing quality scores. Omit sku/itemId to get the store-wide aggregate. Pass sku OR itemId to scope to a single SKU's breakdown. MARKET-RESTRICTED: US only — Walmart's listing-quality data-science backbone is US-Marketplace exclusive. Returns MARKET_NOT_SUPPORTED error if the active profile is MX/CA/CL.",
     annotations: READ_REMOTE,
     inputSchema: z
       .object({
@@ -371,15 +395,17 @@ function registerListingTools(server: McpServer): void {
         payload: z.unknown().optional(),
       })
       .passthrough(),
-    handler: async (input) =>
-      withClient(input.sellerProfileId, async (client) =>
+    handler: async (input) => {
+      assertMarketAllowed(input.sellerProfileId, ["us"], "walmart_get_listing_quality_score");
+      return withClient(input.sellerProfileId, async (client) =>
         client.getListingQualityScore({
           sku: input.sku,
           itemId: input.itemId,
           viewTrendingItems: input.viewTrendingItems,
           wfsFlag: input.wfsFlag,
         }),
-      ),
+      );
+    },
   });
 
   registerTool(server, {
@@ -614,11 +640,14 @@ function registerListingTools(server: McpServer): void {
 
   registerTool(server, {
     name: "walmart_get_unpublished_counts",
-    description: "Get aggregate counts of unpublished items in your Walmart catalog, broken down by reason (no shipping info, no primary image, etc.). Lightweight alternative to scanning every SKU's unpublishedReasons field. KNOWN PRODUCTION ISSUE (verified 2026-05-22): Walmart's aurora unpublished-item-service backend is currently returning HTTP 500 (proxied as 502) for this endpoint. Sandbox does not expose this endpoint at all (404). Until Walmart fixes the backend, fall back to walmart_get_items + client-side aggregation of unpublishedReasons across the result set, or use scripts/audit-store.mjs which already surfaces unpublishedReasons per SKU.",
+    description: "Get aggregate counts of unpublished items in your Walmart catalog, broken down by reason (no shipping info, no primary image, etc.). MARKET-RESTRICTED: US only — Walmart Insights API is US-Marketplace exclusive. KNOWN PRODUCTION ISSUE (verified 2026-05-22): Walmart's aurora unpublished-item-service backend is currently returning HTTP 500 (proxied as 502). Fall back to walmart_get_items + client-side aggregation of unpublishedReasons, or use scripts/audit-store.mjs.",
     annotations: READ_REMOTE,
     inputSchema: z.object({ sellerProfileId: sellerProfileIdField }).strict(),
     outputSchema: passthroughShape,
-    handler: async (input) => withClient(input.sellerProfileId, async (client) => client.getUnpublishedItemsCounts()),
+    handler: async (input) => {
+      assertMarketAllowed(input.sellerProfileId, ["us"], "walmart_get_unpublished_counts");
+      return withClient(input.sellerProfileId, async (client) => client.getUnpublishedItemsCounts());
+    },
   });
 
   registerTool(server, {

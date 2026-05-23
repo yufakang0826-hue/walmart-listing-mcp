@@ -1,12 +1,18 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { WALMART_MARKETS, type WalmartMarket } from "@walmart-mcp/types";
 
 const DEFAULT_PROFILE_STORE_FILENAME = ".walmart-seller-profiles.json";
 
 export interface SellerProfileRecord {
   sellerProfileId: string;
   sellerProfileLabel?: string;
-  marketplace: string;
+  /**
+   * Walmart Global Marketplace market routing. Required in v1.0.0+.
+   * Sent as `WM_MARKET` header on every API call.
+   * Each (market, clientId) pair gets a separate OAuth token cache entry.
+   */
+  market: WalmartMarket;
   clientId?: string;
   clientSecret?: string;
   channelType?: string;
@@ -20,8 +26,37 @@ interface SellerProfileStoreData {
   profiles: Record<string, SellerProfileRecord>;
 }
 
+interface LegacySellerProfileRecord extends Omit<SellerProfileRecord, "market"> {
+  market?: WalmartMarket;
+  marketplace?: string;
+}
+
 function createEmptyStore(): SellerProfileStoreData {
   return { profiles: {} };
+}
+
+function isValidMarket(value: unknown): value is WalmartMarket {
+  return typeof value === "string" && (WALMART_MARKETS as readonly string[]).includes(value);
+}
+
+/**
+ * Migrate a pre-v1.0.0 profile record that lacks the `market` field.
+ * Legacy profiles only spoke to US Marketplace, so we default to `us`.
+ * The `marketplace` string field (e.g. "US") is dropped.
+ */
+function migrateLegacyRecord(raw: LegacySellerProfileRecord): SellerProfileRecord {
+  let market: WalmartMarket;
+  if (isValidMarket(raw.market)) {
+    market = raw.market;
+  } else if (typeof raw.marketplace === "string") {
+    const lower = raw.marketplace.toLowerCase();
+    market = isValidMarket(lower) ? lower : "us";
+  } else {
+    market = "us";
+  }
+
+  const { marketplace: _legacyMarketplace, ...rest } = raw;
+  return { ...rest, market };
 }
 
 class SellerProfileStore {
@@ -46,10 +81,18 @@ class SellerProfileStore {
       if (!content) {
         data = createEmptyStore();
       } else {
-        const parsed = JSON.parse(content) as Partial<SellerProfileStoreData>;
+        const parsed = JSON.parse(content) as Partial<{
+          activeSellerProfileId: string;
+          profiles: Record<string, LegacySellerProfileRecord>;
+        }>;
+        const rawProfiles = parsed.profiles || {};
+        const migrated: Record<string, SellerProfileRecord> = {};
+        for (const [id, raw] of Object.entries(rawProfiles)) {
+          migrated[id] = migrateLegacyRecord(raw);
+        }
         data = {
           activeSellerProfileId: parsed.activeSellerProfileId,
-          profiles: parsed.profiles || {},
+          profiles: migrated,
         };
       }
     }
@@ -124,11 +167,19 @@ class SellerProfileStore {
   upsertProfile(profileId: string, updates: Partial<SellerProfileRecord>): SellerProfileRecord {
     const store = this.readStore();
     const current = store.profiles[profileId];
+    const market = updates.market ?? current?.market;
+    if (!market) {
+      throw new Error(`market is required when creating seller profile ${profileId} (one of: ${WALMART_MARKETS.join(", ")})`);
+    }
+    if (!isValidMarket(market)) {
+      throw new Error(`Invalid market "${market}" for profile ${profileId}; must be one of: ${WALMART_MARKETS.join(", ")}`);
+    }
+
     const nextProfile: SellerProfileRecord = {
       ...(current || {}),
       ...updates,
       sellerProfileId: profileId,
-      marketplace: updates.marketplace || current?.marketplace || "US",
+      market,
       updatedAt: new Date().toISOString(),
     };
 

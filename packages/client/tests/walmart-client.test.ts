@@ -25,12 +25,12 @@ function tokenResponse(token = "tok-1"): Response {
   });
 }
 
-function makeClient(overrides?: { svcEnv?: string; clientId?: string }): WalmartClient {
+function makeClient(overrides?: { svcEnv?: string; clientId?: string; market?: "us" | "mx" | "ca" | "cl" }): WalmartClient {
   return new WalmartClient({
     sellerProfileId: `${overrides?.svcEnv ?? "prod"}-${overrides?.clientId ?? "client-id"}`,
     clientId: overrides?.clientId ?? "client-id",
     clientSecret: "client-secret",
-    marketplace: "US",
+    market: overrides?.market ?? "us",
     channelType: null,
     consumerId: null,
     svcEnv: overrides?.svcEnv ?? "prod",

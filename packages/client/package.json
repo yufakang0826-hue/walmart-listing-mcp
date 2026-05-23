@@ -18,7 +18,9 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@walmart-mcp/types": "*"
+  },
   "devDependencies": {
     "@types/node": "^22.15.17",
     "@vitest/coverage-v8": "^4.1.5",
