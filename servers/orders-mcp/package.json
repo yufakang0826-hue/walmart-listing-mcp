@@ -1,0 +1,65 @@
+{
+  "name": "@walmart-mcp/orders-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCP server for Walmart Marketplace orders + returns workflows. Multi-market (US/MX/CA/CL) via Walmart Global API.",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "walmart-mcp-orders-server": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.build.json",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "walmart",
+    "marketplace",
+    "walmart-global-api",
+    "orders",
+    "returns",
+    "seller"
+  ],
+  "author": "yufakang0826-hue (https://github.com/yufakang0826-hue)",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yufakang0826-hue/walmart-listing-mcp.git",
+    "directory": "servers/orders-mcp"
+  },
+  "homepage": "https://github.com/yufakang0826-hue/walmart-listing-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/yufakang0826-hue/walmart-listing-mcp/issues"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.11.1",
+    "@walmart-mcp/client": "*",
+    "@walmart-mcp/profiles": "*",
+    "@walmart-mcp/types": "*",
+    "dotenv": "^16.5.0",
+    "tsx": "^4.20.3",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.17",
+    "@vitest/coverage-v8": "^4.1.5",
+    "@walmart-mcp/test-utils": "*",
+    "typescript": "^5.6.3",
+    "vitest": "^4.1.5"
+  }
+}
