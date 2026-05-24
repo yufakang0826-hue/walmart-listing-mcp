@@ -2,7 +2,7 @@ import { type McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { serializeError, serializeSuccess } from "@walmart-mcp/client";
-import type { WalmartMarket } from "@walmart-mcp/types";
+import { MARKET_CURRENCY, type WalmartMarket } from "@walmart-mcp/types";
 import { authService } from "./auth-service.js";
 
 /**
@@ -677,15 +677,83 @@ function registerListingTools(server: McpServer): void {
 
   registerTool(server, {
     name: "walmart_update_price",
-    description: "Update standard price for a single SKU. Walmart payload shape: { Price: { itemIdentifier: { sku, productIdType: 'SKU' }, pricingList: { pricing: [{ currentPrice: { value: { amount, currency: 'USD' } } }] } } }. For promotional pricing (sale, clearance, reduced), use walmart_submit_feed with feedType='PROMO_PRICE'. For bulk updates across many SKUs, use feedType='price' or 'PRICE_AND_PROMOTION'. Idempotent for repeated identical calls.",
+    description: "Update the standard (base) price for a single SKU. Uses the Walmart Global API Pricing & Promotions schema (PUT /v3/price?promo=false, spec 5.0.20250801). The MCP builds the payload from semantic args — caller provides sku + amount, currency defaults to the active profile's market (us→USD, mx→MXN, ca→CAD, cl→CLP). For promotional / reduced / clearance pricing use walmart_update_promo_price. For bulk updates use walmart_submit_feed({ feedType: 'PRICE_AND_PROMOTION' }). Idempotent — same input → same end state.",
     annotations: WRITE_REMOTE_IDEMPOTENT,
     inputSchema: z
       .object({
-        payload: z.record(z.unknown()).describe("Price request body. Must follow Walmart's /v3/price body shape. Required."),
+        sku: skuField,
+        amount: z.number().positive().describe("New standard price as a positive number in the target currency's natural units (e.g. 9.99 USD, 349.00 MXN)."),
+        currency: z.enum(["USD", "MXN", "CAD", "CLP"]).optional().describe("Override the market-default currency. Must match the active market: us→USD, mx→MXN, ca→CAD, cl→CLP."),
         sellerProfileId: sellerProfileIdField,
       })
       .strict(),
     outputSchema: passthroughShape,
-    handler: async (input) => withClient(input.sellerProfileId, async (client) => client.updatePrice(input.payload)),
+    handler: async (input) => {
+      const market = authService.getActiveMarket(input.sellerProfileId);
+      const currency = input.currency ?? MARKET_CURRENCY[market];
+      const expected = MARKET_CURRENCY[market];
+      if (currency !== expected) {
+        throw new Error(`Currency ${currency} does not match active market '${market}' (expected ${expected}).`);
+      }
+      const payload = {
+        sku: input.sku,
+        pricing: [{
+          currentPrice: { currency, amount: input.amount },
+          currentPriceType: "BASE",
+          priceDisplayCodes: "CART",
+          processMode: "UPSERT",
+        }],
+      };
+      return withClient(input.sellerProfileId, async (client) => client.updatePrice(payload));
+    },
+  });
+
+  registerTool(server, {
+    name: "walmart_update_promo_price",
+    description: "Set a promotional / reduced / clearance price for a single SKU (PUT /v3/price?promo=true, Global API spec 5.0.20250801). Constraints: ≤ 10 active promos per SKU; 30-min lead time from current UTC; max 180-day duration; effectiveDate within 365 days; no overlapping windows. For bulk promos use walmart_submit_feed({ feedType: 'PRICE_AND_PROMOTION' }). To cancel a single promo set processMode='DELETE' (not yet exposed as a typed arg — use walmart_submit_feed for delete). Currency defaults from active market.",
+    annotations: WRITE_REMOTE_IDEMPOTENT,
+    inputSchema: z
+      .object({
+        sku: skuField,
+        promoAmount: z.number().positive().describe("Promotional price (what the customer pays). Must be less than basePrice."),
+        basePrice: z.number().positive().describe("Original / pre-promotion price shown as strikethrough."),
+        effectiveDate: z.string().datetime({ offset: true }).describe("ISO 8601 UTC datetime when the promo starts (e.g. 2026-06-01T00:00:00Z). Must be ≥ 30 minutes from current UTC."),
+        expirationDate: z.string().datetime({ offset: true }).describe("ISO 8601 UTC datetime when the promo ends. Must be after effectiveDate; ≤ 180 days total duration."),
+        priceType: z.enum(["REDUCED", "CLEARANCE"]).default("REDUCED").describe("Promotional price type (default REDUCED; CLEARANCE for end-of-life inventory)."),
+        currency: z.enum(["USD", "MXN", "CAD", "CLP"]).optional().describe("Override the market-default currency."),
+        sellerProfileId: sellerProfileIdField,
+      })
+      .strict(),
+    outputSchema: passthroughShape,
+    handler: async (input) => {
+      const market = authService.getActiveMarket(input.sellerProfileId);
+      const currency = input.currency ?? MARKET_CURRENCY[market];
+      const expected = MARKET_CURRENCY[market];
+      if (currency !== expected) {
+        throw new Error(`Currency ${currency} does not match active market '${market}' (expected ${expected}).`);
+      }
+      if (input.promoAmount >= input.basePrice) {
+        throw new Error(`promoAmount (${input.promoAmount}) must be less than basePrice (${input.basePrice}).`);
+      }
+      const effective = new Date(input.effectiveDate).getTime();
+      const expires = new Date(input.expirationDate).getTime();
+      if (expires <= effective) {
+        throw new Error(`expirationDate must be after effectiveDate.`);
+      }
+      const payload = {
+        sku: input.sku,
+        pricing: [{
+          currentPrice: { currency, amount: input.promoAmount },
+          currentPriceType: input.priceType,
+          comparisonPrice: { currency, amount: input.basePrice },
+          comparisonPriceType: "BASE",
+          priceDisplayCodes: "CART",
+          effectiveDate: input.effectiveDate,
+          expirationDate: input.expirationDate,
+          processMode: "UPSERT",
+        }],
+      };
+      return withClient(input.sellerProfileId, async (client) => client.updatePromoPrice(payload));
+    },
   });
 }

@@ -154,40 +154,58 @@ try {
   );
 
   // ==============================================================
-  // update_price
+  // update_price (v1.0.0 — typed args; payload built internally)
   // ==============================================================
   const priceHappy = await client.callTool({
     name: "walmart_update_price",
-    arguments: {
-      payload: {
-        Price: {
-          itemIdentifier: { sku: "smoke-test-sku", productIdType: "SKU" },
-          pricingList: { pricing: [{ currentPrice: { value: { amount: 12.34, currency: "USD" } } }] },
-        },
-      },
-    },
+    arguments: { sku: "smoke-test-sku", amount: 12.34 },
   });
   r.record(
-    "update_price (sandbox mock) returns success shape",
-    priceHappy.isError !== true && priceHappy.structuredContent?.ItemPriceResponse !== undefined,
-    `message: ${trim(priceHappy.structuredContent?.ItemPriceResponse?.message, 80)}`,
+    "update_price (sandbox mock, typed args) returns success",
+    priceHappy.isError !== true,
+    trim(priceHappy.content?.[0]?.text, 120),
   );
 
-  const priceNoPayload = await tryCallTool({ name: "walmart_update_price", arguments: {} });
+  const priceNoSku = await tryCallTool({ name: "walmart_update_price", arguments: { amount: 9.99 } });
   r.record(
-    "update_price without payload rejected at schema layer (no API call)",
-    priceNoPayload.isError === true && SCHEMA_ERR.test(priceNoPayload.content?.[0]?.text || ""),
-    trim(priceNoPayload.content?.[0]?.text, 160),
+    "update_price without sku rejected at schema layer",
+    priceNoSku.isError === true && SCHEMA_ERR.test(priceNoSku.content?.[0]?.text || ""),
+    trim(priceNoSku.content?.[0]?.text, 160),
   );
 
-  const priceEmpty = await client.callTool({
+  const priceWrongCurrency = await tryCallTool({
     name: "walmart_update_price",
-    arguments: { payload: {} },
+    arguments: { sku: "smoke-test-sku", amount: 9.99, currency: "MXN" },
   });
   r.record(
-    "update_price with empty payload returns API error",
-    priceEmpty.isError === true,
-    trim(priceEmpty.content?.[0]?.text, 160),
+    "update_price with wrong currency for active market rejected pre-API",
+    priceWrongCurrency.isError === true && /does not match active market/i.test(priceWrongCurrency.content?.[0]?.text || ""),
+    trim(priceWrongCurrency.content?.[0]?.text, 160),
+  );
+
+  // ==============================================================
+  // update_promo_price (v1.0.0 — new tool)
+  // ==============================================================
+  const promoStart = new Date(Date.now() + 2 * 3600 * 1000).toISOString(); // +2h
+  const promoEnd = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(); // +7d
+  const promoHappy = await client.callTool({
+    name: "walmart_update_promo_price",
+    arguments: { sku: "smoke-test-sku", promoAmount: 9.99, basePrice: 12.34, effectiveDate: promoStart, expirationDate: promoEnd },
+  });
+  r.record(
+    "update_promo_price (sandbox mock, typed args) returns success",
+    promoHappy.isError !== true,
+    trim(promoHappy.content?.[0]?.text, 120),
+  );
+
+  const promoInverted = await tryCallTool({
+    name: "walmart_update_promo_price",
+    arguments: { sku: "smoke-test-sku", promoAmount: 20, basePrice: 10, effectiveDate: promoStart, expirationDate: promoEnd },
+  });
+  r.record(
+    "update_promo_price rejects promoAmount >= basePrice pre-API",
+    promoInverted.isError === true && /must be less than basePrice/i.test(promoInverted.content?.[0]?.text || ""),
+    trim(promoInverted.content?.[0]?.text, 160),
   );
 
   // ==============================================================

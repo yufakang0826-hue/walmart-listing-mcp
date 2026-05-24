@@ -493,8 +493,28 @@ export class WalmartClient {
     return this.request({ method: "PUT", path: "/v3/inventory", params: { sku }, body: payload });
   }
 
+  /**
+   * PUT /v3/price?promo=false — standard (base) price update for a single SKU.
+   * v1.0.0 uses the Global API flat payload schema (Pricing & Promotions API,
+   * spec 5.0.20250801-18_47_55):
+   *   { sku, pricing: [{ currentPrice: { currency, amount }, currentPriceType,
+   *                       priceDisplayCodes, processMode }] }
+   * The legacy nested payload (Price.itemIdentifier.pricingList.pricing[i].currentPrice.value)
+   * was deprecated 2025-10-24 with a 2026 sunset.
+   */
   async updatePrice(payload: unknown): Promise<unknown> {
-    return this.request({ method: "PUT", path: "/v3/price", body: payload });
+    return this.request({ method: "PUT", path: "/v3/price", params: { promo: "false" }, body: payload });
+  }
+
+  /**
+   * PUT /v3/price?promo=true — promotional / reduced / clearance price for a
+   * single SKU. Payload extends the standard shape with effectiveDate /
+   * expirationDate and currentPriceType=REDUCED|CLEARANCE plus a
+   * comparisonPrice element. Single endpoint, Global API across us|mx|ca|cl
+   * (Walmart docs: update-promotional-price-for-a-single-item).
+   */
+  async updatePromoPrice(payload: unknown): Promise<unknown> {
+    return this.request({ method: "PUT", path: "/v3/price", params: { promo: "true" }, body: payload });
   }
 
   getContext(): { sellerProfileId: string | null; market: WalmartMarket; sandbox: boolean } {

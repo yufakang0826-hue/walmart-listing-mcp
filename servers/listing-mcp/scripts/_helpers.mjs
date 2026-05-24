@@ -10,7 +10,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import {
   UNTRUSTED_PREFIX,
   UNTRUSTED_SOURCE_MARKER,
-} from "../dist/helper/format.js";
+} from "@walmart-mcp/client";
 
 export { UNTRUSTED_PREFIX, UNTRUSTED_SOURCE_MARKER };
 

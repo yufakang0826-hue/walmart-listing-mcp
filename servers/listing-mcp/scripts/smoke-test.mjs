@@ -26,6 +26,7 @@ const EXPECTED_TOOL_NAMES = new Set([
   "walmart_get_inventory",
   "walmart_update_inventory",
   "walmart_update_price",
+  "walmart_update_promo_price",
 ]);
 
 const REMOVED_WILDCARDS = ["walmart_invoke_listing_api", "walmart_invoke_api", "walmart_raw_request"];
@@ -39,7 +40,7 @@ try {
   const list = await client.listTools();
   const got = new Set(list.tools.map((t) => t.name));
 
-  r.record("tool count is 22", got.size === 22, `actual=${got.size}`);
+  r.record("tool count is 23", got.size === 23, `actual=${got.size}`);
 
   const missing = [...EXPECTED_TOOL_NAMES].filter((n) => !got.has(n));
   r.record("all expected tools present", missing.length === 0, missing.length ? `missing: ${missing.join(", ")}` : "");
