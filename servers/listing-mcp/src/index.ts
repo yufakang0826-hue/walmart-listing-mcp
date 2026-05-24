@@ -7,8 +7,8 @@ import { registerWalmartTools } from "./service/walmart-tools.js";
 
 function initServer(): McpServer {
   return new McpServer({
-    name: "walmart-mcp-server",
-    version: "0.5.1",
+    name: "walmart-mcp-listing-server",
+    version: "1.0.0",
   });
 }
 
