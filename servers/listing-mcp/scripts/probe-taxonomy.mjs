@@ -1,6 +1,6 @@
 // Probe Walmart sandbox to find which taxonomy parameters return 200.
 // Documents how `version=4.2` was discovered (5.0 / 4.6 / no-version all 400).
-import { connectMcp, requireSandbox } from "./_helpers.mjs";
+import { connectMcp, requireSandbox } from "@walmart-mcp/test-utils";
 
 requireSandbox("queries Walmart taxonomy");
 

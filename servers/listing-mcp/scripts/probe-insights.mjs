@@ -1,5 +1,5 @@
 // Probe Insights / Buy Box / variant / review endpoints to see what sandbox returns.
-import { connectMcp, requireSandbox } from "./_helpers.mjs";
+import { connectMcp, requireSandbox } from "@walmart-mcp/test-utils";
 requireSandbox("queries insights / buybox / catalog");
 
 const { client, close } = await connectMcp("probe-insights");
