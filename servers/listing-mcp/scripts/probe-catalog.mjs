@@ -1,6 +1,6 @@
 // Probe the Walmart catalog search endpoint to discover the real response shape.
 // Sandbox-only — this is a diagnostic script.
-import { connectMcp, requireSandbox } from "./_helpers.mjs";
+import { connectMcp, requireSandbox } from "@walmart-mcp/test-utils";
 
 requireSandbox("queries Walmart public catalog");
 

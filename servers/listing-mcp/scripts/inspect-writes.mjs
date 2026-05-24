@@ -1,7 +1,7 @@
 // Diagnostic: print full structured responses for write tools so you can
 // audit exactly what sandbox actually returned. Useful when smoke-test-writes
 // "unexpectedly succeeded" — the actual response shape lives here.
-import { connectMcp, requireSandbox } from "./_helpers.mjs";
+import { connectMcp, requireSandbox } from "@walmart-mcp/test-utils";
 
 requireSandbox("writes to Walmart");
 

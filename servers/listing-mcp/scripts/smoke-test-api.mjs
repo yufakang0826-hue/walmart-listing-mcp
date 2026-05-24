@@ -2,7 +2,7 @@
 // in .env. Runs against the live Walmart API (sandbox if WALMART_SANDBOX=true,
 // otherwise production).
 
-import { connectMcp, createRecorder, isExternalResponse, trim } from "./_helpers.mjs";
+import { connectMcp, createRecorder, isExternalResponse, trim } from "@walmart-mcp/test-utils";
 
 const r = createRecorder();
 const { client, close } = await connectMcp("smoke-api");

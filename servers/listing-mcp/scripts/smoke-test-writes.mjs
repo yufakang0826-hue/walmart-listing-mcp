@@ -19,7 +19,7 @@ import {
   createRecorder,
   requireSandbox,
   trim,
-} from "./_helpers.mjs";
+} from "@walmart-mcp/test-utils";
 
 requireSandbox("creates feed submissions and calls retire_item");
 

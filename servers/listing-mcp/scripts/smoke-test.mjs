@@ -1,7 +1,7 @@
 // Structural smoke test — no credentials required.
 // Verifies tool inventory, annotations, schema rejection, local response shape.
 
-import { connectMcp, createRecorder, isLocalResponse } from "./_helpers.mjs";
+import { connectMcp, createRecorder, isLocalResponse } from "@walmart-mcp/test-utils";
 
 const EXPECTED_TOOL_NAMES = new Set([
   "walmart_upsert_seller_profile",

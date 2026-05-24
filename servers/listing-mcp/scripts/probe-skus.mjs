@@ -1,7 +1,7 @@
 // Probe sandbox SKUs — which SKUs returned by get_items actually look up
 // successfully via get_item? Sandbox returns a global catalog, not your
 // seller-owned items, so we expect mismatches.
-import { connectMcp, requireSandbox } from "./_helpers.mjs";
+import { connectMcp, requireSandbox } from "@walmart-mcp/test-utils";
 
 requireSandbox("queries arbitrary SKUs");
 
