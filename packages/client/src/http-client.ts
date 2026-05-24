@@ -11,8 +11,8 @@ import {
   isSandboxEnvironment,
 } from "./constants.js";
 
-type HttpMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
-type QueryParams = Record<string, string | number | boolean | undefined>;
+export type HttpMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
+export type QueryParams = Record<string, string | number | boolean | undefined>;
 
 export interface WalmartTokenInfo {
   accessToken: string;
@@ -35,7 +35,7 @@ export class WalmartClientError extends Error {
   }
 }
 
-interface WalmartClientConfig {
+export interface WalmartHttpClientConfig {
   sellerProfileId?: string | null;
   clientId: string;
   clientSecret: string;
@@ -49,7 +49,7 @@ interface WalmartClientConfig {
   svcEnv?: string | null;
 }
 
-interface RequestOptions {
+export interface RequestOptions {
   method: HttpMethod;
   path: string;
   params?: QueryParams;
@@ -60,25 +60,6 @@ interface RequestOptions {
     filename: string;
     mimeType: string;
   };
-}
-
-interface WalmartItemRecord {
-  sku?: string;
-  mart?: string;
-  wpid?: string;
-  availability?: string;
-  publishedStatus?: string;
-  lifecycleStatus?: string;
-  isDuplicate?: boolean;
-  unpublishedReasons?: unknown;
-  unpublishedReason?: unknown;
-  [key: string]: unknown;
-}
-
-interface WalmartItemLookupResponse {
-  ItemResponse?: WalmartItemRecord[];
-  totalItems?: number;
-  [key: string]: unknown;
 }
 
 const tokenCache = new Map<string, WalmartTokenInfo>();
@@ -133,16 +114,6 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function defaultFeedFilename(mimeType: string): string {
-  const lower = mimeType.toLowerCase();
-  if (lower.includes("xml")) return "feed.xml";
-  if (lower.includes("zip")) return "feed.zip";
-  if (lower.includes("csv")) return "feed.csv";
-  if (lower.includes("tab") || lower.includes("tsv")) return "feed.tsv";
-  if (lower.includes("octet-stream")) return "feed.bin";
-  return "feed.json";
-}
-
 function serializeBody(body: unknown, contentType: string): string {
   if (typeof body === "string") {
     return body;
@@ -173,16 +144,30 @@ function buildRequestBody(options: RequestOptions): { body: BodyInit | undefined
   };
 }
 
-export class WalmartClient {
-  private readonly sellerProfileId: string | null;
-  private readonly clientId: string;
-  private readonly clientSecret: string;
-  private readonly market: WalmartMarket;
-  private readonly channelType: string | null;
-  private readonly consumerId: string | null;
-  private readonly svcEnv: string;
+/**
+ * Walmart Global Marketplace API HTTP client base.
+ *
+ * Provides OAuth (client_credentials at /v3/token), market-scoped token
+ * cache, retry with jitter, rate-limit replenish backoff, and automatic
+ * injection of WM_MARKET + WM_GLOBAL_VERSION + WM_SVC.NAME +
+ * WM_QOS.CORRELATION_ID on every outbound request.
+ *
+ * Server-specific clients (listing / orders / fulfillment / reports / ads)
+ * extend this class and add typed methods that call `this.request()`.
+ *
+ * Token cache key is `(svcEnv, market, profile-or-clientId)` — each
+ * (market, account) pair gets its own bearer token.
+ */
+export class WalmartHttpClient {
+  protected readonly sellerProfileId: string | null;
+  protected readonly clientId: string;
+  protected readonly clientSecret: string;
+  protected readonly market: WalmartMarket;
+  protected readonly channelType: string | null;
+  protected readonly consumerId: string | null;
+  protected readonly svcEnv: string;
 
-  constructor(config: WalmartClientConfig) {
+  constructor(config: WalmartHttpClientConfig) {
     this.sellerProfileId = config.sellerProfileId || null;
     this.clientId = config.clientId;
     this.clientSecret = config.clientSecret;
@@ -292,7 +277,18 @@ export class WalmartClient {
     return url;
   }
 
-  private async request<T = unknown>(options: RequestOptions): Promise<T> {
+  /**
+   * Make an authenticated request to the Walmart Global Marketplace API.
+   *
+   * Server-specific subclasses (WalmartListingClient, future WalmartOrdersClient,
+   * etc.) call this with typed args from their domain methods. Handles:
+   * - automatic OAuth token fetch + refresh on 401 (one retry)
+   * - 429 Retry-After-style backoff using x-next-replenish-time header
+   * - 5xx exponential backoff + jitter, up to MAX_RETRIES
+   * - multipart/form-data for fileUpload payloads (feed submissions)
+   * - text vs JSON response decoding based on Content-Type
+   */
+  async request<T = unknown>(options: RequestOptions): Promise<T> {
     let lastError: unknown;
     let hasRefreshedToken = false;
     let forceRefreshOnce = false;
@@ -370,151 +366,6 @@ export class WalmartClient {
     }
 
     throw new WalmartClientError(502, "WALMART_NETWORK_ERROR", `Walmart request failed: ${String(lastError)}`, lastError);
-  }
-
-  async getItems(params?: QueryParams): Promise<unknown> {
-    return this.request({ method: "GET", path: "/v3/items", params });
-  }
-
-  async getItem(sku: string): Promise<unknown> {
-    return this.request({ method: "GET", path: `/v3/items/${encodeURIComponent(sku)}` });
-  }
-
-  async searchWalmartCatalog(params: {
-    query?: string;
-    gtin?: string;
-    upc?: string;
-    asin?: string;
-    responseFormat?: "DEFAULT" | "SPEC";
-  }): Promise<unknown> {
-    return this.request({ method: "GET", path: "/v3/items/walmart/search", params });
-  }
-
-  async searchMyCatalog(body: {
-    query: { field: string; values: string[] };
-    filter?: unknown;
-    sort?: Array<{ field: string; order: "ASC" | "DESC" }>;
-  }): Promise<unknown> {
-    return this.request({ method: "POST", path: "/v3/items/catalog/search", body });
-  }
-
-  async getListingQualityScore(params?: {
-    viewTrendingItems?: boolean;
-    wfsFlag?: string;
-    sku?: string;
-    itemId?: string;
-  }): Promise<unknown> {
-    return this.request({
-      method: "GET",
-      path: "/v3/insights/items/listingQuality/score",
-      params: params as QueryParams,
-    });
-  }
-
-
-  async retireItem(sku: string): Promise<unknown> {
-    return this.request({ method: "DELETE", path: `/v3/items/${encodeURIComponent(sku)}` });
-  }
-
-  async getItemStatus(sku: string): Promise<unknown> {
-    const payload = await this.getItem(sku) as WalmartItemLookupResponse;
-    const items = Array.isArray(payload?.ItemResponse) ? payload.ItemResponse : [];
-    const item = items.find((entry) => entry?.sku === sku);
-
-    if (!item) {
-      throw new WalmartClientError(
-        404,
-        "WALMART_ITEM_NOT_FOUND",
-        items.length > 0
-          ? `Walmart returned ${items.length} item(s) but none matched SKU ${sku}`
-          : `No Walmart item was returned for SKU ${sku}`,
-        payload,
-      );
-    }
-
-    return {
-      sku,
-      mart: item.mart ?? null,
-      wpid: item.wpid ?? null,
-      availability: item.availability ?? null,
-      publishedStatus: item.publishedStatus ?? null,
-      lifecycleStatus: item.lifecycleStatus ?? null,
-      isDuplicate: typeof item.isDuplicate === "boolean" ? item.isDuplicate : null,
-      unpublishedReasons: item.unpublishedReasons ?? item.unpublishedReason ?? null,
-    };
-  }
-
-  async submitFeed(
-    feedType: string,
-    payload: unknown,
-    params?: QueryParams,
-    options?: { contentType?: string; filename?: string },
-  ): Promise<unknown> {
-    const mimeType = options?.contentType
-      || (typeof payload === "string" && payload.trim().startsWith("<")
-        ? "application/xml"
-        : "application/json");
-    const filename = options?.filename || defaultFeedFilename(mimeType);
-
-    return this.request({
-      method: "POST",
-      path: "/v3/feeds",
-      params: { feedType, ...(params || {}) },
-      body: payload,
-      fileUpload: { filename, mimeType },
-    });
-  }
-
-  async getTaxonomy(feedType = "MP_ITEM", version = "4.2"): Promise<unknown> {
-    return this.request({ method: "GET", path: "/v3/utilities/taxonomy", params: { feedType, version } });
-  }
-
-  async getDepartments(): Promise<unknown> {
-    return this.request({ method: "GET", path: "/v3/utilities/taxonomy/departments" });
-  }
-
-  async getUnpublishedItemsCounts(): Promise<unknown> {
-    return this.request({ method: "GET", path: "/v3/insights/items/unpublished/counts" });
-  }
-
-  async getFeedStatus(feedId: string): Promise<unknown> {
-    return this.request({ method: "GET", path: `/v3/feeds/${encodeURIComponent(feedId)}`, params: { includeDetails: true } });
-  }
-
-  async getFeeds(params?: QueryParams): Promise<unknown> {
-    return this.request({ method: "GET", path: "/v3/feeds", params });
-  }
-
-  async getInventory(sku: string): Promise<unknown> {
-    return this.request({ method: "GET", path: "/v3/inventory", params: { sku } });
-  }
-
-  async updateInventory(sku: string, payload: unknown): Promise<unknown> {
-    return this.request({ method: "PUT", path: "/v3/inventory", params: { sku }, body: payload });
-  }
-
-  /**
-   * PUT /v3/price?promo=false — standard (base) price update for a single SKU.
-   * v1.0.0 uses the Global API flat payload schema (Pricing & Promotions API,
-   * spec 5.0.20250801-18_47_55):
-   *   { sku, pricing: [{ currentPrice: { currency, amount }, currentPriceType,
-   *                       priceDisplayCodes, processMode }] }
-   * The legacy nested payload (Price.itemIdentifier.pricingList.pricing[i].currentPrice.value)
-   * was deprecated 2025-10-24 with a 2026 sunset.
-   */
-  async updatePrice(payload: unknown): Promise<unknown> {
-    return this.request({ method: "PUT", path: "/v3/price", params: { promo: "false" }, body: payload });
-  }
-
-  /**
-   * PUT /v3/price?promo=true — promotional / reduced / clearance price for a
-   * single SKU. Payload extends the standard shape with effectiveDate /
-   * expirationDate and currentPriceType=REDUCED|CLEARANCE plus a
-   * comparisonPrice element. Single endpoint, Global API across us|mx|ca|cl
-   * (Walmart docs: update-promotional-price-for-a-single-item).
-   */
-  async updatePromoPrice(payload: unknown): Promise<unknown> {
-    return this.request({ method: "PUT", path: "/v3/price", params: { promo: "true" }, body: payload });
   }
 
   getContext(): { sellerProfileId: string | null; market: WalmartMarket; sandbox: boolean } {

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
-import { WalmartClient, WalmartClientError, __resetTokenCacheForTests } from "../src/walmart-client.js";
+import { WalmartHttpClient, WalmartClientError, __resetTokenCacheForTests } from "../src/http-client.js";
 
 type FetchArgs = Parameters<typeof fetch>;
 type FetchReturn = ReturnType<typeof fetch>;
@@ -25,8 +25,8 @@ function tokenResponse(token = "tok-1"): Response {
   });
 }
 
-function makeClient(overrides?: { svcEnv?: string; clientId?: string; market?: "us" | "mx" | "ca" | "cl" }): WalmartClient {
-  return new WalmartClient({
+function makeClient(overrides?: { svcEnv?: string; clientId?: string; market?: "us" | "mx" | "ca" | "cl" }): WalmartHttpClient {
+  return new WalmartHttpClient({
     sellerProfileId: `${overrides?.svcEnv ?? "prod"}-${overrides?.clientId ?? "client-id"}`,
     clientId: overrides?.clientId ?? "client-id",
     clientSecret: "client-secret",
@@ -35,6 +35,12 @@ function makeClient(overrides?: { svcEnv?: string; clientId?: string; market?: "
     consumerId: null,
     svcEnv: overrides?.svcEnv ?? "prod",
   });
+}
+
+// Trigger a request without depending on any server-specific subclass method.
+// All retry / token-cache / error-handling behavior runs through request().
+async function triggerRequest(client: WalmartHttpClient): Promise<unknown> {
+  return client.request({ method: "GET", path: "/v3/items" });
 }
 
 let fetchSpy: MockInstance<(...args: FetchArgs) => FetchReturn>;
@@ -48,7 +54,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("WalmartClient.verifyCredentials", () => {
+describe("WalmartHttpClient.verifyCredentials", () => {
   it("fetches a token and returns expiry metadata", async () => {
     fetchSpy.mockResolvedValueOnce(tokenResponse());
 
@@ -76,9 +82,17 @@ describe("WalmartClient.verifyCredentials", () => {
       message: "bad creds",
     });
   });
+
+  it("attaches WM_MARKET + WM_GLOBAL_VERSION on the token request", async () => {
+    fetchSpy.mockResolvedValueOnce(tokenResponse());
+    await makeClient({ market: "mx" }).verifyCredentials();
+    const headers = (fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined)?.headers as Record<string, string> | undefined;
+    expect(headers?.WM_MARKET).toBe("mx");
+    expect(headers?.WM_GLOBAL_VERSION).toBe("3.1");
+  });
 });
 
-describe("WalmartClient retry behavior", () => {
+describe("WalmartHttpClient retry behavior", () => {
   it("refreshes the token exactly once on 401, then continues without re-refreshing on later retries", async () => {
     let tokenCalls = 0;
     let itemCalls = 0;
@@ -94,7 +108,7 @@ describe("WalmartClient retry behavior", () => {
       return Promise.resolve(jsonResponse({ status: 200, body: { ItemResponse: [] } }));
     });
 
-    await makeClient().getItems();
+    await triggerRequest(makeClient());
     expect(tokenCalls).toBe(2);
     expect(itemCalls).toBe(3);
   });
@@ -106,51 +120,11 @@ describe("WalmartClient retry behavior", () => {
       return Promise.resolve(jsonResponse({ status: 503, body: { errors: [{ code: "BUSY" }] } }));
     });
 
-    await expect(makeClient().getItems()).rejects.toBeInstanceOf(WalmartClientError);
+    await expect(triggerRequest(makeClient())).rejects.toBeInstanceOf(WalmartClientError);
   }, 30_000);
 });
 
-describe("WalmartClient.getItemStatus", () => {
-  it("throws 404 when no item matches the requested SKU", async () => {
-    fetchSpy.mockImplementation((input) => {
-      const url = String(input);
-      if (url.endsWith("/v3/token")) return Promise.resolve(tokenResponse());
-      return Promise.resolve(jsonResponse({
-        status: 200,
-        body: { ItemResponse: [{ sku: "OTHER", publishedStatus: "PUBLISHED" }] },
-      }));
-    });
-
-    await expect(makeClient().getItemStatus("WANTED")).rejects.toMatchObject({
-      code: "WALMART_ITEM_NOT_FOUND",
-      statusCode: 404,
-    });
-  });
-
-  it("returns derived status when SKU matches", async () => {
-    fetchSpy.mockImplementation((input) => {
-      const url = String(input);
-      if (url.endsWith("/v3/token")) return Promise.resolve(tokenResponse());
-      return Promise.resolve(jsonResponse({
-        status: 200,
-        body: {
-          ItemResponse: [{ sku: "WANTED", publishedStatus: "PUBLISHED", lifecycleStatus: "ACTIVE", wpid: "wpid-1" }],
-        },
-      }));
-    });
-
-    const status = await makeClient().getItemStatus("WANTED") as {
-      sku: string;
-      wpid: string | null;
-      publishedStatus: string | null;
-    };
-    expect(status.sku).toBe("WANTED");
-    expect(status.publishedStatus).toBe("PUBLISHED");
-    expect(status.wpid).toBe("wpid-1");
-  });
-});
-
-describe("WalmartClient token cache", () => {
+describe("WalmartHttpClient token cache", () => {
   it("scopes the cache so a sandbox client does not reuse a prod token", async () => {
     let tokenCalls = 0;
     fetchSpy.mockImplementation((input) => {
@@ -162,8 +136,24 @@ describe("WalmartClient token cache", () => {
       return Promise.resolve(jsonResponse({ status: 200, body: { ItemResponse: [] } }));
     });
 
-    await makeClient({ svcEnv: "prod" }).getItems();
-    await makeClient({ svcEnv: "stg" }).getItems();
+    await triggerRequest(makeClient({ svcEnv: "prod" }));
+    await triggerRequest(makeClient({ svcEnv: "stg" }));
+    expect(tokenCalls).toBe(2);
+  });
+
+  it("scopes the cache per market so a us client does not reuse a mx token", async () => {
+    let tokenCalls = 0;
+    fetchSpy.mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/v3/token")) {
+        tokenCalls += 1;
+        return Promise.resolve(tokenResponse(`tok-${tokenCalls}`));
+      }
+      return Promise.resolve(jsonResponse({ status: 200, body: { ItemResponse: [] } }));
+    });
+
+    await triggerRequest(makeClient({ market: "us" }));
+    await triggerRequest(makeClient({ market: "mx" }));
     expect(tokenCalls).toBe(2);
   });
 });

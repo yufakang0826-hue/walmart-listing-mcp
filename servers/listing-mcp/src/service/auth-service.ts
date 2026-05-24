@@ -1,6 +1,7 @@
-import { WalmartClient, isSandboxEnvironment } from "@walmart-mcp/client";
+import { isSandboxEnvironment } from "@walmart-mcp/client";
 import { sellerProfileStore, type SellerProfileRecord } from "@walmart-mcp/profiles";
 import { WALMART_MARKETS, type WalmartMarket } from "@walmart-mcp/types";
+import { WalmartListingClient } from "./walmart-listing-client.js";
 
 function isValidMarket(value: unknown): value is WalmartMarket {
   return typeof value === "string" && (WALMART_MARKETS as readonly string[]).includes(value);
@@ -172,9 +173,9 @@ class WalmartAuthService {
     };
   }
 
-  createClient(profileId?: string): WalmartClient {
+  createClient(profileId?: string): WalmartListingClient {
     const credentials = this.getResolvedCredentials(profileId);
-    return new WalmartClient({
+    return new WalmartListingClient({
       sellerProfileId: credentials.sellerProfileId,
       clientId: credentials.clientId,
       clientSecret: credentials.clientSecret,
