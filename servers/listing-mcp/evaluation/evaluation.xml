@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  @walmart-mcp/listing-server evaluation suite (mcp-builder Phase 4 format).
+  v1.0.0 — Walmart Global API, multi-market (us|mx|ca|cl).
+
+  Categories:
+    - STATE-INDEPENDENT (Q1-Q11): answers derived from tool schemas + v1.0.0
+      contract; no live Walmart API access needed.
+    - SANDBOX-SPECIFIC (Q12-Q16): require a configured sandbox seller profile
+      for the active market; sandbox is mock data so per-market results may
+      be identical.
+    - MULTI-MARKET-SPECIFIC (Q17-Q20): require profiles for at least two
+      markets (us + mx recommended) to exercise WM_MARKET routing + market
+      guards.
+
+  Adjust SANDBOX-SPECIFIC and MULTI-MARKET answers to match your sandbox
+  state before running. See evaluation/README.md for harness usage.
+-->
+<evaluation>
+
+  <!-- ============ STATE-INDEPENDENT (Q1-Q11) ============ -->
+
+  <qa_pair>
+    <question>How many tools total does this MCP server expose in v1.0.0? Reply with the number only.</question>
+    <answer>23</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>List every tool name this MCP server exposes that starts with the prefix "walmart_get_". Reply with a comma-separated, alphabetically sorted list and nothing else.</question>
+    <answer>walmart_get_complete_item,walmart_get_departments,walmart_get_feed_status,walmart_get_feeds,walmart_get_inventory,walmart_get_item,walmart_get_item_status,walmart_get_items,walmart_get_listing_quality_score,walmart_get_taxonomy,walmart_get_token_status,walmart_get_unpublished_counts</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>List every tool name this MCP server exposes that starts with the prefix "walmart_update_". Reply with a comma-separated, alphabetically sorted list and nothing else.</question>
+    <answer>walmart_update_inventory,walmart_update_price,walmart_update_promo_price</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Does this MCP server expose a wildcard tool that accepts arbitrary HTTP method and path (such as walmart_invoke_listing_api, walmart_invoke_api, or walmart_raw_request)? Reply "yes" or "no".</question>
+    <answer>no</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Call walmart_get_items with an extra unrecognized parameter named "nonExistentField" set to true. Does the server reject the call before contacting Walmart? Reply "yes" or "no".</question>
+    <answer>yes</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>The walmart_retire_item tool is marked with three specific boolean annotations among readOnlyHint, destructiveHint, idempotentHint, openWorldHint that are set to true. List the names of the annotations that are set to true, comma-separated and alphabetically sorted. Reply with the list only.</question>
+    <answer>destructiveHint,idempotentHint,openWorldHint</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>This MCP server has one composite tool that orchestrates multiple Walmart API calls in parallel (it returns item metadata, inventory, listing quality score, and public catalog content for a single SKU). Reply with only the exact tool name.</question>
+    <answer>walmart_get_complete_item</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Inspect the walmart_upsert_seller_profile tool's input schema. The "market" field is an enum. List its allowed values comma-separated, alphabetically sorted. Reply with the list only.</question>
+    <answer>ca,cl,mx,us</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Inspect the walmart_update_price tool's input schema. The "currency" field is an enum. List its allowed values comma-separated, alphabetically sorted. Reply with the list only.</question>
+    <answer>CAD,CLP,MXN,USD</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Which Walmart Global API header version does this MCP send on every outbound request? Reply with just the version string (e.g. "3.1").</question>
+    <answer>3.1</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>How many Walmart markets does this MCP server support? Reply with the number only.</question>
+    <answer>4</answer>
+  </qa_pair>
+
+  <!-- ============ SANDBOX-SPECIFIC (Q12-Q16) ============ -->
+  <!-- Setup: configure one sandbox profile (any market) and make it active. -->
+
+  <qa_pair>
+    <question>Call walmart_list_seller_profiles. Of the profiles returned, identify which one is currently the active profile and reply with only its sellerProfileId.</question>
+    <answer>walmart-us-main</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Call walmart_get_token_status for the active seller profile (omit sellerProfileId). Does the response indicate that credentials (clientId and clientSecret) are configured? Reply "yes" or "no".</question>
+    <answer>yes</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Call walmart_get_items with limit=2 (do not pass offset or nextCursor — get the first page). Inspect the response. Does it include a field named "nextCursor" at the top level that you would pass back to walmart_get_items to fetch the second page? Reply "yes" or "no".</question>
+    <answer>yes</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Use walmart_get_items with limit=1 to identify a SKU. Then call walmart_get_item with that SKU to inspect its full record. Reply with only the publishedStatus value from the get_item response, exactly as returned (uppercase).</question>
+    <answer>PUBLISHED</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Call walmart_get_token_status for the active profile. What is the value of the "market" field in the response? Reply with the lowercase 2-letter code only.</question>
+    <answer>us</answer>
+  </qa_pair>
+
+  <!-- ============ MULTI-MARKET-SPECIFIC (Q17-Q20) ============ -->
+  <!-- Setup: configure at least one US profile + one MX profile. -->
+
+  <qa_pair>
+    <question>With an MX profile active (walmart_set_active_seller_profile to a profile where market=mx), call walmart_get_listing_quality_score with no sku. Does the call return a structured error with code MARKET_NOT_SUPPORTED instead of contacting Walmart? Reply "yes" or "no".</question>
+    <answer>yes</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>With an MX profile active, call walmart_update_price with sku="X", amount=99, currency="USD". Does the server reject the call pre-API because currency does not match the active market? Reply "yes" or "no".</question>
+    <answer>yes</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>With an MX profile active, call walmart_update_price with sku="X", amount=99 (omit currency). Does the server build a payload using the market-default currency MXN? Reply "yes" or "no".</question>
+    <answer>yes</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Configure a sellerProfile with market="cl" (Walmart Chile). Then call walmart_verify_credentials. Walmart returns 400 INVALID_REQUEST_HEADER for many Solutions Provider credentials in CL. Reply "yes" if you see that error, or "no" if your credentials are CL-enrolled and the call succeeds.</question>
+    <answer>yes</answer>
+  </qa_pair>
+
+</evaluation>

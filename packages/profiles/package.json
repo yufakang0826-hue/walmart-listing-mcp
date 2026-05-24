@@ -1,0 +1,30 @@
+{
+  "name": "@walmart-mcp/profiles",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared sellerProfile store. One profile per (market, account). Markets: us|mx|ca|cl.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@walmart-mcp/types": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.17",
+    "@vitest/coverage-v8": "^4.1.5",
+    "typescript": "^5.6.3",
+    "vitest": "^4.1.5"
+  }
+}
