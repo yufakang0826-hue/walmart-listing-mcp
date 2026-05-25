@@ -4,13 +4,16 @@
 import { connectMcp, createRecorder } from "@walmart-mcp/test-utils";
 
 const EXPECTED_TOOL_NAMES = new Set([
-  "walmart_get_orders",
+  "walmart_list_orders",
+  "walmart_list_released_orders",
   "walmart_get_order",
   "walmart_acknowledge_order",
-  "walmart_ship_order",
-  "walmart_cancel_order",
-  "walmart_refund_order",
-  "walmart_get_returns",
+  "walmart_acknowledge_orders_bulk",
+  "walmart_ship_order_lines",
+  "walmart_cancel_order_lines",
+  "walmart_refund_order_lines",
+  "walmart_list_returns",
+  "walmart_get_return",
   "walmart_issue_return_refund",
 ]);
 
@@ -31,7 +34,7 @@ try {
   const surprises = [...got].filter((n) => !EXPECTED_TOOL_NAMES.has(n));
   r.record("no unexpected tools", surprises.length === 0, surprises.length ? `extra: ${surprises.join(", ")}` : "");
 
-  // walmart_acknowledge_order should be idempotent + non-destructive
+  // walmart_acknowledge_order — idempotent + non-destructive
   const ack = list.tools.find((t) => t.name === "walmart_acknowledge_order");
   const ackAnn = ack?.annotations || {};
   r.record(
@@ -40,17 +43,25 @@ try {
     `got ${JSON.stringify(ackAnn)}`,
   );
 
-  // walmart_ship_order should be non-idempotent (records new shipment each call)
-  const ship = list.tools.find((t) => t.name === "walmart_ship_order");
+  // walmart_ship_order_lines — non-idempotent (records new shipment each call)
+  const ship = list.tools.find((t) => t.name === "walmart_ship_order_lines");
   const shipAnn = ship?.annotations || {};
   r.record(
-    "walmart_ship_order annotations correct",
+    "walmart_ship_order_lines annotations correct",
     shipAnn.idempotentHint === false && shipAnn.openWorldHint === true,
     `got ${JSON.stringify(shipAnn)}`,
   );
 
+  // walmart_refund_order_lines — non-idempotent (each call creates refund record)
+  const refund = list.tools.find((t) => t.name === "walmart_refund_order_lines");
+  const refundAnn = refund?.annotations || {};
+  r.record(
+    "walmart_refund_order_lines annotations correct",
+    refundAnn.idempotentHint === false && refundAnn.openWorldHint === true,
+    `got ${JSON.stringify(refundAnn)}`,
+  );
+
   // Strict schema check: walmart_get_order with extra param should reject
-  // either via thrown McpError OR a result with isError=true.
   let strictOk = false;
   let strictDetail = "";
   try {

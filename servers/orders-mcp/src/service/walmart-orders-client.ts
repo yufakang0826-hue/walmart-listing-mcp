@@ -14,8 +14,14 @@ import { WalmartHttpClient, type QueryParams } from "@walmart-mcp/client";
  */
 export class WalmartOrdersClient extends WalmartHttpClient {
   // List orders — GET /v3/orders with optional filters
-  async getOrders(params?: QueryParams): Promise<unknown> {
+  async listOrders(params?: QueryParams): Promise<unknown> {
     return this.request({ method: "GET", path: "/v3/orders", params });
+  }
+
+  // List released orders (ready to ship) — GET /v3/orders/released
+  // Same query-param set as listOrders.
+  async listReleasedOrders(params?: QueryParams): Promise<unknown> {
+    return this.request({ method: "GET", path: "/v3/orders/released", params });
   }
 
   // Get single order — GET /v3/orders/{purchaseOrderId}
@@ -35,9 +41,10 @@ export class WalmartOrdersClient extends WalmartHttpClient {
     });
   }
 
-  // Ship order — POST /v3/orders/{purchaseOrderId}/shipping
-  // Payload contains orderLines with trackingInfo (carrier, trackingNumber, methodCode).
-  async shipOrder(purchaseOrderId: string, payload: unknown): Promise<unknown> {
+  // Ship order lines — POST /v3/orders/{purchaseOrderId}/shipping
+  // Payload contains orderShipment.orderLines with trackingInfo
+  // (carrier, trackingNumber, trackingURL, methodCode, shipDateTime).
+  async shipOrderLines(purchaseOrderId: string, payload: unknown): Promise<unknown> {
     return this.request({
       method: "POST",
       path: `/v3/orders/${encodeURIComponent(purchaseOrderId)}/shipping`,
@@ -45,8 +52,9 @@ export class WalmartOrdersClient extends WalmartHttpClient {
     });
   }
 
-  // Cancel order — POST /v3/orders/{purchaseOrderId}/cancel
-  async cancelOrder(purchaseOrderId: string, payload: unknown): Promise<unknown> {
+  // Cancel order lines — POST /v3/orders/{purchaseOrderId}/cancel
+  // Only lines in Acknowledged status are cancellable per Walmart docs.
+  async cancelOrderLines(purchaseOrderId: string, payload: unknown): Promise<unknown> {
     return this.request({
       method: "POST",
       path: `/v3/orders/${encodeURIComponent(purchaseOrderId)}/cancel`,
@@ -54,8 +62,9 @@ export class WalmartOrdersClient extends WalmartHttpClient {
     });
   }
 
-  // Refund order — POST /v3/orders/{purchaseOrderId}/refund
-  async refundOrder(purchaseOrderId: string, payload: unknown): Promise<unknown> {
+  // Refund order lines (pre-return refund) — POST /v3/orders/{purchaseOrderId}/refund
+  // For return-driven refunds use issueReturnRefund instead.
+  async refundOrderLines(purchaseOrderId: string, payload: unknown): Promise<unknown> {
     return this.request({
       method: "POST",
       path: `/v3/orders/${encodeURIComponent(purchaseOrderId)}/refund`,
@@ -64,11 +73,23 @@ export class WalmartOrdersClient extends WalmartHttpClient {
   }
 
   // List returns — GET /v3/returns
-  async getReturns(params?: QueryParams): Promise<unknown> {
+  async listReturns(params?: QueryParams): Promise<unknown> {
     return this.request({ method: "GET", path: "/v3/returns", params });
   }
 
+  // Get a single return — uses the list endpoint with returnOrderId query filter.
+  // Walmart does NOT expose GET /v3/returns/{returnOrderId} as a single-resource
+  // path (verified absent from the API reference index 2026-05-25).
+  async getReturn(returnOrderId: string): Promise<unknown> {
+    return this.request({
+      method: "GET",
+      path: "/v3/returns",
+      params: { returnOrderId },
+    });
+  }
+
   // Issue return refund — POST /v3/returns/{returnOrderId}/refund
+  // Body: { customerOrderId, refundLines: [{ returnOrderLineNumber, quantity: { unitOfMeasure, measurementValue } }] }
   async issueReturnRefund(returnOrderId: string, payload: unknown): Promise<unknown> {
     return this.request({
       method: "POST",
