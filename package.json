@@ -12,8 +12,8 @@
     "servers/*"
   ],
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "build": "npm run build -w @walmart-mcp/types -w @walmart-mcp/client -w @walmart-mcp/profiles -w @walmart-mcp/test-utils -w @walmart-mcp/listing-server -w @walmart-mcp/orders-server --if-present",
+    "typecheck": "npm run typecheck -w @walmart-mcp/types -w @walmart-mcp/client -w @walmart-mcp/profiles -w @walmart-mcp/test-utils -w @walmart-mcp/listing-server -w @walmart-mcp/orders-server --if-present",
     "test": "npm run test --workspaces --if-present",
     "clean": "npm exec --workspaces -- rm -rf dist"
   },

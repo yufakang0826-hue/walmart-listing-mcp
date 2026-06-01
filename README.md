@@ -14,7 +14,7 @@ Production-grade Model Context Protocol (MCP) servers for the **Walmart Global M
 | `packages/profiles` | `@walmart-mcp/profiles` — multi-market sellerProfile store (one profile per `market`) | v0.1.0 |
 | `packages/types` | `@walmart-mcp/types` — `WalmartMarket` enum, `MARKET_CURRENCY`, `WM_GLOBAL_VERSION` | v0.1.0 |
 | `packages/test-utils` | `@walmart-mcp/test-utils` — smoke-test framework helpers | v0.1.0 (skeleton) |
-| `servers/listing-mcp` | `@walmart-mcp/listing-server` — **23 tools** for items / feeds / inventory / pricing / taxonomy / insights | v1.0.0 |
+| `servers/listing-mcp` | `@walmart-mcp/listing-server` — **23 tools** for items / feeds / inventory / pricing / taxonomy / insights | v1.1.0 |
 | `servers/orders-mcp` | Order lifecycle (acknowledge / ship / cancel / track) — 4 markets | planned (v0.6.0+) |
 | `servers/fulfillment-mcp` | WFS + manual shipping (returns, lagging shipments) | planned |
 | `servers/reports-mcp` | Settlement, payouts, performance metrics, tax reports | planned |
@@ -159,7 +159,7 @@ cd servers/listing-mcp && node scripts/audit-store.mjs --output store-audit.csv
 
 PRs welcome. Before opening:
 
-1. `npm run typecheck && npm run build && npm test` must all pass
+1. `npm run build && npm run typecheck && npm test` must all pass
 2. `cd servers/listing-mcp && node scripts/smoke-test.mjs` must pass
 3. For new tools, follow the probe-first rule in `CLAUDE.md` — write a `scripts/probe-*.mjs` first, verify the endpoint exists, then add the typed tool
 
