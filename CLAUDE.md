@@ -29,10 +29,13 @@ walmart-listing-mcp/                ← root (npm workspaces)
         └── examples/               ← claude-settings.json, codex-config.toml templates
 ```
 
-Build commands (run from root):
+Build commands (run from root). Build BEFORE typecheck — workspaces resolve
+each other through their emitted `dist/*.d.ts`, so the declarations must exist
+first. Root scripts run workspaces in dependency order (types → client →
+profiles → test-utils → servers), not the alphabetical order npm uses by default.
 ```
-npm run typecheck     # 5 workspaces
-npm run build         # 5 workspaces
+npm run build         # 6 workspaces, dependency order
+npm run typecheck     # 6 workspaces (needs a prior build)
 npm test              # runs vitest in each workspace that has tests
 ```
 
@@ -121,7 +124,7 @@ Every meaningful change ships through this rhythm:
 ```
 1. Branch              git checkout -b <type>/<version>-<topic>
 2. Implement           code + tests + docs
-3. Local verify        npm run typecheck && npm run build && npm test
+3. Local verify        npm run build && npm run typecheck && npm test
 4. Sandbox verify      cd servers/listing-mcp && node scripts/smoke-test.mjs
                        node scripts/smoke-test-api.mjs       # reads
                        node scripts/smoke-test-writes.mjs    # writes (sandbox only)
